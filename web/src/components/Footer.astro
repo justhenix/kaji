@@ -1,8 +1,10 @@
 ---
 import logo from '../../../logo/kaji-logo.svg?url';
 import { site } from '../config/site';
+import DitherField from './DitherField.astro';
 ---
 <footer class="footer">
+  <DitherField side="right" anchor="corner" />
   <div class="container footer-inner">
     <a class="footer-brand" href="/" aria-label="Kaji home"><img src={logo} alt="Kaji" width="103" height="40" loading="lazy" /></a>
     <span class="footer-note">A little guidance. More independence.</span>
@@ -14,7 +16,7 @@ import { site } from '../config/site';
   </div>
 </footer>
 <style>
-  .footer { background: var(--surface); border-top: 1px solid #eaf0fa; }
+  .footer { position: relative; isolation: isolate; overflow: clip; background: var(--surface); border-top: 1px solid #eaf0fa; }
   .footer-inner { min-height: 128px; display: flex; align-items: center; gap: 30px; }
   .footer-brand { display: flex; align-items: center; min-height: 44px; flex-shrink: 0; }
   img { display: block; width: 103px; height: auto; }

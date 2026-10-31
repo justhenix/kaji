@@ -1,4 +1,4 @@
-export type Artwork = 'hero' | 'feature' | 'guide' | 'head' | 'control' | 'download' | 'corners' | 'cursor';
+export type Artwork = 'sweep' | 'cursor';
 export const palette = [[9, 49, 141], [253, 145, 204]] as const;
 
 const bayer = [
@@ -39,29 +39,12 @@ export function pixelAt(kind: Artwork, gx: number, gy: number, width: number, he
     if (!inCursor((x - .13) / .74, (y - .07) / .86)) return 0;
     density = .98 - .12 * x;
     pink = smooth((x + y * .48 - .4) / .65);
-  } else if (kind === 'guide' || kind === 'head' || kind === 'control' || kind === 'feature') {
-    const u = kind === 'head' ? 1 - x : x;
-    const center = .18 + .75 * smooth(u / .62);
-    const distance = (y - center) / .115;
-    const taper = 1 - smooth((u - .6) / .32);
-    const bottomFade = 1 - smooth((y - .91) / .09);
-    density = Math.exp(-distance * distance * 1.8) * taper * bottomFade;
-    pink = smooth(distance * .58 + .5 + .18 * Math.sin(u * 7));
-  } else if (kind === 'download') {
-    const edge = Math.min(x, 1 - x);
-    const center = .19 + .31 * smooth(edge / .25);
-    const distance = (y - center) / .17;
-    density = Math.exp(-distance * distance * 1.7) * (1 - smooth(edge / .255));
-    pink = smooth(distance * .6 + .4);
   } else {
-    const left = x < .5;
-    const edge = left ? x : 1 - x;
-    const reach = kind === 'hero' ? .46 : .48;
-    const center = (kind === 'hero' ? .35 : .23) + .58 * Math.sin(clamp(edge / reach) * Math.PI / 2);
-    const distance = (y - center) / (kind === 'hero' ? .12 : .16);
-    const taper = 1 - smooth((edge - .24) / .24);
-    density = Math.exp(-distance * distance * 1.5) * taper * (1 - smooth((y - .85) / .15));
-    pink = smooth(distance * .6 + .5 + (left ? -.07 : .12));
+    const center = .22 + .48 * smooth(x / .95);
+    const distance = (y - center) / .16;
+    const taper = 1 - smooth((x - .32) / .53);
+    density = .8 * Math.exp(-distance * distance * 1.5) * taper;
+    pink = smooth(distance * .55 + .5);
   }
 
   if (density < 1 / 256 || density <= threshold) return 0;

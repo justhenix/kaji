@@ -8,9 +8,11 @@ import settingsSvg from 'remixicon/icons/System/settings-3-line.svg?raw';
 import boldSvg from 'remixicon/icons/Editor/bold.svg?raw';
 import italicSvg from 'remixicon/icons/Editor/italic.svg?raw';
 import underlineSvg from 'remixicon/icons/Editor/underline.svg?raw';
+import fontColorSvg from 'remixicon/icons/Editor/font-color.svg?raw';
 import alignLeftSvg from 'remixicon/icons/Editor/align-left.svg?raw';
 import alignCenterSvg from 'remixicon/icons/Editor/align-center.svg?raw';
 import wordSvg from 'remixicon/icons/Document/file-word-fill.svg?raw';
+import Icon from './Icon.astro';
 interface Props { kind: 'guide' | 'head' | 'control' }
 const { kind } = Astro.props;
 const descriptions = {
@@ -25,27 +27,28 @@ const descriptions = {
       {kind === 'control' ? <img class="kaji-logo" src={kajiLogo} alt="" width="82" height="32" />
         : kind === 'guide' ? <span class="window-title"><span class="document-icon icon" set:html={wordSvg} /><span class="app-name">Document</span></span>
         : <span class="window-title">Head control</span>}
-      <span class="window-controls"><svg viewBox="0 0 68 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 9h10M29 4h9v9h-9zM55 4l9 9m0-9-9 9" /></svg></span>
+      <span class="window-controls"><Icon name="minimize" size={14} /><Icon name="maximize" size={12} /><Icon name="close" size={14} /></span>
     </div>
     {kind === 'guide' ? <>
       <div class="editor-menu"><span>File</span><span class="current-menu">Home</span><span>Insert</span><span>Draw</span><span>Layout</span><span class="wide-menu">References</span><span class="wide-menu">View</span></div>
       <div class="editor-ribbon">
         <div class="format-tools">
-          <div class="font-readout"><span>Calibri (Body) <span class="font-caret">⌄</span></span><span class="font-size">11</span></div>
-          <div class="text-tools"><span class="icon" set:html={boldSvg} /><span class="icon" set:html={italicSvg} /><span class="icon" set:html={underlineSvg} /><span class="font-color">A</span></div>
+          <div class="font-readout"><span><span class="font-name">Calibri (Body)</span><span class="font-caret"><Icon name="caret" size={12} /></span></span><span class="font-size">11</span></div>
+          <div class="text-tools"><span class="icon" set:html={boldSvg} /><span class="icon" set:html={italicSvg} /><span class="icon" set:html={underlineSvg} /><span class="icon font-color" set:html={fontColorSvg} /></div>
         </div>
         <div class="alignment-controls">
           <span class="control-shape align-left"><span class="icon" set:html={alignLeftSvg} /></span>
           <div class="alignment-target">
             <span class="control-shape align-center"><span class="icon" set:html={alignCenterSvg} /><span>Align Center</span></span>
             <span class="guide-callout">Click here next</span>
+            <img class="demo-pointer guide-pointer" src="/art/cursor.png" alt="" width="150" height="165" />
           </div>
         </div>
       </div>
       <div class="editor-canvas">
         <div class="document-page"><p class="document-heading">A little more freedom.</p><p>A clearer path through everyday tasks.</p><p>One step at a time, at your own pace.</p><span class="document-rule"></span></div>
       </div>
-      <div class="guide-footer"><span class="step-marker">1</span><div class="step-copy"><strong>Center your paragraph</strong><span>Step 1 of 2 · Choose the highlighted control.</span></div></div>
+      <div class="guide-footer"><span class="step-marker"><span class="step-before">1</span><span class="step-after icon" set:html={checkSvg} /></span><div class="step-copy"><strong>Center your paragraph</strong><span class="step-status"><span class="step-before">Step 1 of 2 · Choose the highlighted control.</span><span class="step-after">Step complete · Paragraph centered.</span></span></div></div>
     </> : kind === 'head' ? <>
       <div class="head-body">
         <div class="head-stage">
@@ -55,6 +58,7 @@ const descriptions = {
             <img class="dwell-cursor" src="/art/cursor.png" alt="" width="150" height="165" loading="lazy" />
           </div>
           <span class="tracking-chip">Head tracking active</span>
+          <span class="dwell-feedback">Opened</span>
         </div>
         <div class="head-tools">
           <span class="head-tool"><span class="icon" set:html={folderSvg} /><span>Open</span></span>
@@ -69,13 +73,14 @@ const descriptions = {
     </> : <>
       <div class="control-body">
         <div class="mode-choices">
-          <div class="mode-choice"><span class="mode-symbol icon" set:html={cursorSvg} /><span class="mode-title">Guide<span class="selection-mark"></span></span><span class="mode-description">Show the next step</span></div>
+          <div class="mode-choice guide-choice"><span class="mode-symbol icon" set:html={cursorSvg} /><span class="mode-title">Guide<span class="selection-mark"></span></span><span class="mode-description">Show the next step</span></div>
           <div class="mode-choice selected"><span class="mode-symbol icon" set:html={checkSvg} /><span class="mode-title">Assist<span class="selection-mark"></span></span><span class="mode-description">Ask before acting</span></div>
         </div>
         <div class="permission-panel">
           <div class="permission-copy"><strong>Allow this action?</strong><span>Align the paragraph below to the center.</span></div>
           <p class="permission-preview">A little more freedom.</p>
-          <div class="permission-actions"><span class="control-shape quiet-control">Cancel</span><span class="control-shape primary-control">Approve</span></div>
+          <div class="permission-actions"><span class="control-shape quiet-control">Cancel</span><span class="control-shape primary-control"><span class="approval-before">Approve</span><span class="approval-after">Approved</span></span></div>
+          <img class="demo-pointer approval-pointer" src="/art/cursor.png" alt="" width="150" height="165" />
         </div>
         <div class="pause-control"><span class="icon" set:html={pauseSvg} /><span>Pause Kaji<small>Stops all actions immediately.</small></span></div>
       </div>
@@ -91,25 +96,26 @@ const descriptions = {
   .window-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; }
   .app-name { color: var(--muted); }
   .document-icon { width: 23px; height: 23px; color: var(--blue); }
-  .window-controls { flex: 0 0 68px; color: var(--muted); }
-  .window-controls svg { display: block; width: 68px; height: 16px; }
+  .window-controls { display: flex; align-items: center; justify-content: space-between; flex: 0 0 68px; color: var(--muted); }
   .editor-menu { display: flex; gap: clamp(12px, 3.6cqw, 27px); padding: 0 20px; height: 38px; background: var(--surface); color: var(--muted); font-size: 12px; }
   .editor-menu span { padding-bottom: 7px; }
   .current-menu { border-bottom: 2px solid var(--blue); color: var(--blue); font-weight: 600; }
   .editor-ribbon { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 24px; border-block: 1px solid #e4e9f2; background: var(--surface); }
-  .format-tools { display: grid; gap: 14px; min-width: 0; }
-  .font-readout { display: flex; align-items: center; gap: 7px; color: var(--ink); font-size: 12px; }
-  .font-readout>span { display: flex; justify-content: space-between; gap: 12px; padding: 6px 9px; border: 1px solid #e2e7f1; background: white; border-radius: 5px; white-space: nowrap; }
+  .format-tools { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .font-readout { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--ink); font-size: 12px; }
+  .font-readout>span { display: flex; justify-content: space-between; gap: 12px; min-width: 0; padding: 6px 9px; border: 1px solid #e2e7f1; background: white; border-radius: 5px; white-space: nowrap; }
+  .font-name { overflow: hidden; text-overflow: ellipsis; }
   .font-caret { color: var(--muted); }
   .font-readout .font-size { padding-inline: 10px; color: var(--muted); }
-  .text-tools { display: flex; align-items: center; gap: 16px; }
+  .text-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
   .text-tools .icon { width: 19px; height: 19px; }
-  .font-color { font-size: 20px; line-height: 1; border-bottom: 3px solid var(--pink); }
+  .font-color { border-bottom: 2px solid var(--pink); }
+  .font-color :global(svg) { clip-path: inset(0 0 15% 0); }
   .control-shape { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 44px; min-height: 44px; border: 1px solid transparent; border-radius: 9px; font-weight: 600; line-height: 1.25; }
   .alignment-controls { display: flex; align-items: center; gap: 8px; }
   .align-left { color: var(--muted); }
   .alignment-target { position: relative; }
-  .align-center { flex-direction: column; gap: 8px; min-width: 100px; min-height: 78px; padding: 10px; border: 2px solid var(--pink-display); background: white; color: var(--blue); box-shadow: 0 0 0 3px #fd91cc22; font-size: 11px; }
+  .align-center { flex-direction: column; gap: 8px; min-width: 100px; min-height: 78px; padding: 10px; border: 2px solid var(--pink-display); background: white; color: var(--blue); box-shadow: 0 0 0 3px #fd91cc22; font-size: 11px; white-space: nowrap; }
   .align-center .icon { width: 29px; height: 29px; }
   .guide-callout { position: absolute; top: calc(100% + 12px); right: -8px; padding: 9px 14px; border-radius: 7px; background: var(--blue); color: white; font-size: 13px; font-weight: 500; white-space: nowrap; box-shadow: 0 5px 12px #09318d15; }
   .guide-callout::before { position: absolute; right: 38px; bottom: 100%; width: 9px; height: 9px; background: inherit; content: ''; transform: translateY(4px) rotate(45deg); }
@@ -118,7 +124,8 @@ const descriptions = {
   .document-heading { margin-bottom: 8px; color: var(--ink); font-family: var(--font-display); font-size: 19px; font-weight: 650; letter-spacing: -.4px; }
   .document-rule { display: inline-block; height: 6px; border-radius: 3px; width: 48%; background: #e0e7f1; margin-top: 14px; }
   .guide-footer { display: flex; align-items: center; gap: 10px; min-height: 59px; padding: 7px 16px; border-top: 1px solid #e4e9f2; }
-  .step-marker { display: grid; flex: 0 0 26px; place-items: center; width: 26px; height: 26px; border: 1px solid var(--blue); border-radius: 50%; color: var(--blue); font-weight: 600; }
+  .step-marker { position: relative; display: grid; flex: 0 0 26px; place-items: center; width: 26px; height: 26px; border: 1px solid var(--blue); border-radius: 50%; color: var(--blue); font-weight: 600; }
+  .step-marker .icon { width: 17px; height: 17px; }
   .step-copy strong, .step-copy span { display: block; }
   .step-copy strong { font-size: 13px; }
   .step-copy span { margin-top: 3px; font-size: 11px; color: var(--muted); }
@@ -155,7 +162,7 @@ const descriptions = {
   .selection-mark { display: block; flex: 0 0 13px; width: 13px; height: 13px; border: 1px solid var(--muted); border-radius: 50%; }
   .selected .selection-mark { border: 4px solid var(--blue); background: white; }
   .mode-description { display: block; margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 1.4; }
-  .permission-panel { padding: 21px; border: 1px solid #e7ecf5; border-radius: 12px; box-shadow: 0 3px 12px #09318d04; }
+  .permission-panel { position: relative; padding: 21px; border: 1px solid #e7ecf5; border-radius: 12px; box-shadow: 0 3px 12px #09318d04; }
   .permission-copy strong, .permission-copy span { display: block; }
   .permission-copy strong { font-size: 18px; font-weight: 600; }
   .permission-copy span { margin-top: 7px; font-size: 13px; color: var(--muted); }
@@ -167,8 +174,77 @@ const descriptions = {
   .pause-control { display: flex; align-items: center; gap: 14px; min-height: 76px; padding: 15px 18px; border-radius: 9px; background: #fff0f7; color: var(--pink-text); font-size: 17px; font-weight: 600; }
   .pause-control .icon { width: 38px; height: 38px; padding: 9px; border-radius: 50%; background: var(--pink-text); color: white; }
   .pause-control small { display: block; font-size: 11px; font-weight: 400; margin-top: 5px; }
+  /* The resting state remains useful without JavaScript or motion. */
+  .demo-pointer { position: absolute; z-index: 3; width: 40px; height: auto; pointer-events: none; opacity: 0; image-rendering: pixelated; }
+  .guide-pointer { top: 36%; left: 38%; }
+  .approval-pointer { right: 25px; bottom: 20px; filter: brightness(0) invert(1) drop-shadow(0 1px 1px #09318d); }
+  .guide-callout { opacity: 0; transform-origin: 70% 0; }
+  .document-page { text-align: center; }
+  .step-copy .step-status { display: grid; }
+  .step-before, .step-after { grid-area: 1 / 1; }
+  .step-before, .approval-before { opacity: 0; }
+  .approval-before { position: absolute; }
+  .step-after, .approval-after { opacity: 1; }
+  .primary-control { position: relative; }
+  .dwell-feedback { position: absolute; top: 12px; right: 12px; padding: 5px 9px; border-radius: 6px; background: var(--blue); color: white; font-size: 10px; font-weight: 600; }
+  .ring-progress { stroke-dashoffset: 0; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .is-playing .guide-pointer { animation: guide-pointer 4s both; }
+    .is-playing .align-center { animation: guide-target 4s both; }
+    .is-playing .guide-callout { animation: guide-tooltip 4s both; }
+    .is-playing .document-page { animation: guide-document 4s both; }
+    .is-playing .step-before { animation: guide-before 4s both; }
+    .is-playing .step-after { animation: guide-after 4s both; }
+    .is-playing .dwell-visual { animation: dwell-pointer 4s both; }
+    .is-playing .ring-progress { animation: dwell-progress 4s linear both; }
+    .is-playing .dwell-target { animation: dwell-click 4s both; }
+    .is-playing .dwell-feedback { animation: dwell-feedback 4s both; }
+    .is-playing .guide-choice { animation: guide-selection 4s both; }
+    .is-playing .mode-choice.selected { animation: assist-selection 4s both; }
+    .is-playing .permission-panel { animation: permission-enter 4s both; }
+    .is-playing .approval-pointer { animation: approval-pointer 4s both; }
+    .is-playing .primary-control { animation: approval-click 4s both; }
+    .is-playing .approval-before { animation: approval-before 4s both; }
+    .is-playing .approval-after { animation: approval-after 4s both; }
+    .is-playing .guide-choice .selection-mark { animation: guide-mark 4s both; }
+    .is-playing .mode-choice.selected .selection-mark { animation: assist-mark 4s both; }
+    .is-playing :is(.guide-pointer, .dwell-visual, .approval-pointer) { animation-timing-function: cubic-bezier(.77, 0, .175, 1); }
+    .is-playing :is(.guide-callout, .dwell-feedback, .permission-panel, .align-center, .dwell-target, .primary-control) { animation-timing-function: cubic-bezier(.23, 1, .32, 1); }
+  }
+  @keyframes guide-pointer {
+    0% { opacity: 0; transform: translate(-90px, 70px); }
+    8% { opacity: 1; }
+    30%, 72% { opacity: 1; transform: translate(0, 0); animation-timing-function: cubic-bezier(.77, 0, .175, 1); }
+    82%, 100% { opacity: 0; transform: translate(0, 0); }
+  }
+  @keyframes guide-target {
+    0%, 15% { box-shadow: 0 0 0 0 transparent; }
+    25%, 51% { box-shadow: 0 0 0 3px #fd91cc44; transform: scale(1); }
+    54% { transform: scale(.97); }
+    58%, 100% { transform: scale(1); }
+  }
+  @keyframes guide-tooltip { 0%, 27% { opacity: 0; transform: scale(.97); } 32%, 59% { opacity: 1; transform: scale(1); } 65%, 100% { opacity: 0; } }
+  @keyframes guide-document { 0%, 55% { text-align: left; } 56%, 100% { text-align: center; } }
+  @keyframes guide-before { 0%, 59% { opacity: 1; } 63%, 100% { opacity: 0; } }
+  @keyframes guide-after { 0%, 59% { opacity: 0; } 63%, 100% { opacity: 1; } }
+  @keyframes dwell-pointer { 0% { transform: translate(35%, 22%); } 30%, 100% { transform: translate(0, 0); } }
+  @keyframes dwell-progress { 0%, 30% { stroke-dashoffset: 100; } 52.5%, 100% { stroke-dashoffset: 0; } }
+  @keyframes dwell-click { 0%, 52% { transform: scale(1); } 55% { transform: scale(.97); } 59%, 100% { transform: scale(1); } }
+  @keyframes dwell-feedback { 0%, 55% { opacity: 0; transform: translateY(4px); } 61%, 85% { opacity: 1; transform: translateY(0); } 92%, 100% { opacity: 0; transform: translateY(0); } }
+  @keyframes guide-selection { 0%, 20% { border-color: var(--blue); background: #f0f4ff; box-shadow: inset 0 0 0 1px var(--blue); } 27%, 100% { border-color: #e8edf5; background: white; box-shadow: none; } }
+  @keyframes assist-selection { 0%, 20% { border-color: #e8edf5; background: white; box-shadow: none; } 27%, 100% { border-color: var(--blue); background: #f0f4ff; box-shadow: inset 0 0 0 1px var(--blue); } }
+  @keyframes guide-mark { 0%, 20% { border: 4px solid var(--blue); } 27%, 100% { border: 1px solid var(--muted); } }
+  @keyframes assist-mark { 0%, 20% { border: 1px solid var(--muted); } 27%, 100% { border: 4px solid var(--blue); } }
+  @keyframes permission-enter { 0%, 25% { opacity: 0; transform: translateY(6px); } 32%, 100% { opacity: 1; transform: translateY(0); } }
+  @keyframes approval-pointer { 0%, 30% { opacity: 0; transform: translate(-65px, 36px); } 35% { opacity: 1; } 58%, 76% { opacity: 1; transform: translate(0, 0); } 84%, 100% { opacity: 0; transform: translate(0, 0); } }
+  @keyframes approval-click { 0%, 64% { transform: scale(1); } 67% { transform: scale(.97); } 71%, 100% { transform: scale(1); } }
+  @keyframes approval-before { 0%, 68% { opacity: 1; } 72%, 100% { opacity: 0; } }
+  @keyframes approval-after { 0%, 68% { opacity: 0; } 72%, 100% { opacity: 1; } }
   @container (max-width: 450px) {
     .wide-menu { display: none; }
+    .editor-ribbon { gap: 8px; padding-inline: 12px; }
+    .font-readout .font-size, .align-left { display: none; }
     .head-body { gap: 14px; padding: 14px; }
     .head-stage { min-height: 214px; }
     .dwell-target { font-size: 17px; min-height: 58px; padding: 10px; gap: 8px; }
@@ -224,7 +300,6 @@ const descriptions = {
     .product-demo { border-radius: 14px; }
     .window-bar { min-height: 40px; padding: 9px 12px; border-radius: 13px 13px 0 0; }
     .window-controls { flex-basis: 58px; }
-    .window-controls svg { width: 58px; height: 14px; }
     .document-icon { width: 19px; height: 19px; }
     .editor-menu { height: 30px; padding-inline: 12px; gap: 16px; font-size: 10px; }
     .editor-ribbon { gap: 10px; padding: 12px; }
@@ -232,7 +307,6 @@ const descriptions = {
     .font-readout { font-size: 10px; }
     .text-tools { gap: 10px; }
     .text-tools .icon { width: 16px; height: 16px; }
-    .font-color { font-size: 17px; }
     .align-center { min-width: 78px; min-height: 64px; padding: 8px; font-size: 9px; }
     .align-center .icon { width: 24px; height: 24px; }
     .guide-callout { top: calc(100% + 9px); right: -4px; padding: 7px 10px; font-size: 11px; }
@@ -272,6 +346,13 @@ const descriptions = {
     .pause-control { min-height: 62px; gap: 10px; padding: 12px; font-size: 14px; }
     .pause-control .icon { width: 30px; height: 30px; padding: 7px; }
     .pause-control small { font-size: 9px; margin-top: 3px; }
+  }
+  @container (max-width: 360px) {
+    .editor-ribbon { gap: 6px; padding-inline: 8px; }
+    .format-tools { gap: 5px; }
+    .text-tools { gap: 3px; }
+    .text-tools .icon { width: 14px; height: 14px; }
+    .align-center { min-width: 64px; }
   }
   @media (forced-colors: active) {
     .align-center, .mode-choice.selected, .dwell-target { outline: 2px solid Highlight; outline-offset: -3px; }

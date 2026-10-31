@@ -2,11 +2,17 @@
 import windows from 'remixicon/icons/Logos/windows-fill.svg?raw';
 import external from 'remixicon/icons/Arrows/arrow-right-up-line.svg?raw';
 import down from 'remixicon/icons/Arrows/arrow-down-line.svg?raw';
+import download from 'remixicon/icons/System/download-line.svg?raw';
 import back from 'remixicon/icons/Arrows/arrow-left-line.svg?raw';
 import next from 'remixicon/icons/Arrows/arrow-right-line.svg?raw';
-interface Props { name: 'windows' | 'external' | 'down' | 'back' | 'next'; size?: number }
+import caret from 'remixicon/icons/Arrows/arrow-down-s-line.svg?raw';
+import folder from 'remixicon/icons/Document/folder-fill.svg?raw';
+import minimize from 'remixicon/icons/System/subtract-line.svg?raw';
+import maximize from 'remixicon/icons/System/checkbox-blank-line.svg?raw';
+import close from 'remixicon/icons/System/close-line.svg?raw';
+interface Props { name: 'windows' | 'external' | 'down' | 'download' | 'back' | 'next' | 'caret' | 'folder' | 'minimize' | 'maximize' | 'close'; size?: number }
 const { name, size = 18 } = Astro.props;
-const icons = { windows, external, down, back, next };
+const icons = { windows, external, down, download, back, next, caret, folder, minimize, maximize, close };
 ---
 <span class="icon" aria-hidden="true" style={`--icon-size: ${size}px`} set:html={icons[name]} />
 <style>

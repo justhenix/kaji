@@ -1,9 +1,9 @@
 ---
 import Actions from './Actions.astro';
-import DitherSand from './DitherSand.svelte';
+import DitherField from './DitherField.astro';
 ---
 <section class="final-cta" aria-labelledby="cta-title">
-  <div class="cta-art"><DitherSand kind="corners" client:visible /></div>
+  <DitherField anchor="bottom" />
   <div class="container cta-copy">
     <h2 id="cta-title">Ready to steer your<br />screen <span class="accent">hands-free?</span></h2>
     <p>Try Kaji for Windows and explore a more<br class="desktop-break" /> flexible way to navigate.</p>
@@ -12,10 +12,9 @@ import DitherSand from './DitherSand.svelte';
 </section>
 <style>
   .final-cta { text-align: center; isolation: isolate; position: relative; overflow: clip; padding: 116px 0 148px; min-height: 530px; }
-  .cta-art { z-index: -1; position: absolute; width: max(1440px, 100%); left: 50%; transform: translateX(-50%); bottom: -180px; opacity: .5; }
   .cta-copy { position: relative; }
   h2 { font-size: clamp(42px, 5vw, 70px); max-width: 960px; margin-inline: auto; }
   p { margin: 25px auto 28px; color: var(--muted); font-size: 18px; line-height: 1.65; }
-  @media (max-width: 767px) { .final-cta { padding: 80px 0 138px; min-height: 470px; } .cta-art { width: 1080px; bottom: -90px; } h2 { font-size: 44px; } }
-  @media (max-width: 480px) { h2 { font-size: 38px; } p { font-size: 16px; max-width: 30ch; } .desktop-break { display: none; } .cta-art { width: 1000px; bottom: -62px; } }
+  @media (max-width: 767px) { .final-cta { padding: 80px 0 138px; min-height: 470px; } h2 { font-size: 44px; } }
+  @media (max-width: 480px) { h2 { font-size: 38px; } p { font-size: 16px; max-width: 30ch; } .desktop-break { display: none; } }
 </style>

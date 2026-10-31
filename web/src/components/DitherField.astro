@@ -1,0 +1,31 @@
+---
+import DitherSand from './DitherSand.svelte';
+
+interface Props {
+  side?: 'left' | 'right' | 'both';
+  anchor?: 'top' | 'center' | 'bottom' | 'corner';
+  eager?: boolean;
+}
+const { side = 'both', anchor = 'center', eager = false } = Astro.props;
+---
+<div class:list={['dither-field', `anchor-${anchor}`, { 'is-frame': side === 'both' }]} aria-hidden="true">
+  {side !== 'right' && <div class="field-plane field-left"><DitherSand kind="sweep" {eager} client:visible /></div>}
+  {side !== 'left' && <div class="field-plane field-right"><DitherSand kind="sweep" {eager} mirrored client:visible /></div>}
+</div>
+<style>
+  .dither-field { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; opacity: var(--dither-opacity); mask-image: linear-gradient(to bottom, transparent, #000 min(96px, 20%), #000 max(calc(100% - 96px), 80%), transparent); }
+  .field-plane { position: absolute; width: var(--dither-width); }
+  .field-left { left: 0; }
+  .field-right { right: 0; }
+  .anchor-top .field-plane { top: var(--dither-top); }
+  .anchor-center .field-plane { top: 50%; transform: translateY(-50%); }
+  .anchor-bottom .field-plane { bottom: var(--dither-bottom); }
+  .anchor-corner .field-plane { bottom: var(--dither-corner); }
+  @media (max-width: 767px) {
+    .is-frame .field-right { display: none; }
+    .field-left { left: -220px; }
+    .field-right { right: -220px; }
+    .anchor-center .field-plane, .anchor-bottom .field-plane { top: auto; bottom: -330px; transform: none; }
+    .anchor-top .field-plane { top: 100px; }
+  }
+</style>

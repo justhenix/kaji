@@ -1,13 +1,14 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import DitherSand from './DitherSand.svelte';
+import DitherField from './DitherField.astro';
 import Icon from './Icon.astro';
 interface Props { code: 404 | 500 }
 const { code } = Astro.props;
 ---
-<BaseLayout title={code === 404 ? 'Page not found — Kaji' : 'Something went off course — Kaji'} noindex>
+<BaseLayout title={code === 404 ? 'Page not found | Kaji' : 'Something went off course | Kaji'} noindex>
   <section class="error-page" aria-labelledby="error-title">
-    <div class="error-wave"><DitherSand kind="corners" eager client:load /></div>
+    <DitherField side="right" anchor="center" eager />
     <div class="container error-grid">
       <div class="error-copy">
         <p class="error-code">{code}</p>
@@ -21,7 +22,6 @@ const { code } = Astro.props;
 </BaseLayout>
 <style>
   .error-page { min-height: calc(100svh - 220px); position: relative; isolation: isolate; overflow: clip; display: flex; align-items: center; padding: 80px 0 110px; }
-  .error-wave { position: absolute; z-index: -1; width: max(1440px, 100%); left: 50%; top: -90px; transform: translateX(-50%); opacity: .5; mask-image: linear-gradient(to right, #000, transparent 12%, transparent 50%, #000 75%); }
   .error-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 70px; align-items: center; }
   .error-copy { padding-left: 64px; }
   .error-code { font-family: var(--font-display); font-size: clamp(110px, 13vw, 190px); font-weight: 750; line-height: 1; letter-spacing: -.06em; color: var(--blue); }
@@ -30,5 +30,5 @@ const { code } = Astro.props;
   .error-note { color: var(--muted); max-width: 36ch; margin-top: 22px; }
   .error-cursor { width: 330px; transform: rotate(8deg); }
   @media (max-width: 1023px) { .error-copy { padding-left: 0; } .error-grid { gap: 24px; } .error-cursor { width: 270px; } }
-  @media (max-width: 767px) { .error-page { padding: 44px 0 56px; } .error-grid { grid-template-columns: 1fr; text-align: center; gap: 26px; } .error-cursor { width: 190px; margin-inline: auto; } h1 { font-size: 40px; } .error-code { font-size: 120px; } .actions { justify-content: center; margin-top: 26px; } .error-wave { width: 1050px; top: 120px; } .error-note { margin-inline: auto; } }
+  @media (max-width: 767px) { .error-page { padding: 44px 0 56px; } .error-grid { grid-template-columns: 1fr; text-align: center; gap: 26px; } .error-cursor { width: 190px; margin-inline: auto; } h1 { font-size: 40px; } .error-code { font-size: 120px; } .actions { justify-content: center; margin-top: 26px; } .error-note { margin-inline: auto; } }
 </style>

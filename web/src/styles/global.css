@@ -26,6 +26,11 @@
   --font-display: 'Figtree Variable', 'Figtree', sans-serif;
   --font-body: 'Inter Variable', 'Inter', sans-serif;
   --gutter: clamp(20px, 5vw, 64px);
+  --dither-width: 960px;
+  --dither-opacity: .3;
+  --dither-top: -80px;
+  --dither-bottom: -240px;
+  --dither-corner: -520px;
   --ease-out: cubic-bezier(.23, 1, .32, 1);
   font-family: var(--font-body);
   color: var(--ink);
@@ -36,6 +41,7 @@
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; scrollbar-color: var(--blue) var(--surface); scrollbar-width: thin; scroll-padding-top: 32px; }
+html.lenis { scroll-behavior: auto; }
 body { margin: 0; min-width: 320px; font-size: 16px; line-height: 1.65; -webkit-font-smoothing: antialiased; }
 body::-webkit-scrollbar { width: 6px; }
 body::-webkit-scrollbar-track { background: var(--surface); }

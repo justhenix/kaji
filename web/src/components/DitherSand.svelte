@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { springGrain, type Artwork } from '../lib/dither';
 
-  let { kind, cursor = false, eager = false }: { kind: Artwork; cursor?: boolean; eager?: boolean } = $props();
+  let { kind, cursor = false, eager = false, mirrored = false }: { kind: Artwork; cursor?: boolean; eager?: boolean; mirrored?: boolean } = $props();
   let host: HTMLDivElement;
   let canvas: HTMLCanvasElement;
   let picture: HTMLImageElement;
@@ -49,6 +49,7 @@
     function resize() {
       if (!picture.complete || !picture.naturalWidth) return;
       stop();
+      if (!host.clientWidth) return;
       // Bound work to the original raster; ultrawide screens do not multiply grains.
       width = Math.min(picture.naturalWidth, Math.ceil(host.clientWidth / 2) * 2);
       height = Math.ceil(width * picture.naturalHeight / picture.naturalWidth / 2) * 2;
@@ -96,7 +97,7 @@
     function move(event: PointerEvent) {
       if (motion.matches || !fine.matches || !visible || !ready || event.pointerType === 'touch') return;
       const rect = host.getBoundingClientRect();
-      const x = (event.clientX - rect.left) / rect.width * width;
+      const x = (mirrored ? rect.right - event.clientX : event.clientX - rect.left) / rect.width * width;
       const y = (event.clientY - rect.top) / rect.height * height;
       pointer = x >= 0 && x <= width && y >= 0 && y <= height ? { x, y } : { x: -1000, y: -1000 };
       if (!frame && pointer.x >= 0) frame = requestAnimationFrame(tick);
@@ -123,13 +124,14 @@
   });
 </script>
 
-<div bind:this={host} class:cursor class="sand" aria-hidden="true" data-dither={kind}>
-  <img bind:this={picture} src={`/art/${kind}.png`} alt="" width={kind === 'cursor' ? 400 : kind === 'feature' ? 800 : 1600} height={kind === 'cursor' ? 440 : kind === 'feature' ? 600 : kind === 'hero' ? 880 : kind === 'corners' ? 700 : 900} loading={eager ? 'eager' : 'lazy'} decoding="async" class:ready />
+<div bind:this={host} class:cursor class:mirrored class="sand" aria-hidden="true" data-dither={kind}>
+  <img bind:this={picture} src={`/art/${kind}.png`} alt="" width={kind === 'cursor' ? 400 : 960} height={kind === 'cursor' ? 440 : 640} loading={eager ? 'eager' : 'lazy'} decoding="async" class:ready />
   <canvas bind:this={canvas} class:ready></canvas>
 </div>
 
 <style>
   .sand { width: 100%; pointer-events: none; position: relative; }
+  .mirrored { transform: scaleX(-1); }
   img { width: 100%; height: auto; display: block; image-rendering: pixelated; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; image-rendering: pixelated; }
   canvas.ready { opacity: 1; }

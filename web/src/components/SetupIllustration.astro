@@ -11,33 +11,33 @@ const { step } = Astro.props;
     <div class="windows-prompt">
       <strong class="prompt-title">Windows protected your PC</strong>
       <p>Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.</p>
-      <span class="more-info">More info</span>
-      <div class="prompt-actions"><span class="run-anyway">Run anyway</span><span class="dont-run">Don't run</span></div>
+      <span class="more-info">More info<span class="prompt-cursor more-cursor" set:html={cursor} /></span>
+      <div class="prompt-actions"><span class="run-anyway">Run anyway<span class="prompt-cursor run-cursor" set:html={cursor} /></span><span class="dont-run">Don't run</span></div>
     </div>
   ) : (
     <div class="setup-window">
       <div class="window-bar">
         <span class="window-title">
-          {step === 1 ? <Icon name="down" size={16} /> : <img src={appIcon} alt="" width="14" height="14" />}
+          {step === 1 && <Icon name="download" size={16} />}
           {step === 1 ? 'Downloads' : 'Kaji Setup'}
         </span>
-        <span class="window-controls"><span>−</span><span>□</span><span>×</span></span>
+        <span class="window-controls"><Icon name="minimize" size={14} /><Icon name="maximize" size={12} /><Icon name="close" size={14} /></span>
       </div>
       {step === 1 ? (
         <div class="file-list">
-          <div class="folder-row"><span class="folder-shape"></span><span>Documents</span></div>
+          <div class="folder-row"><span class="folder-shape"><Icon name="folder" size={30} /></span><span>Documents</span></div>
           <div class="installer-file">
             <img src={appIcon} alt="" width="36" height="36" />
             <strong>Kaji-Setup.exe</strong>
             <span class="file-cursor" set:html={cursor} />
           </div>
-          <div class="folder-row"><span class="folder-shape"></span><span>Screenshots</span></div>
+          <div class="folder-row"><span class="folder-shape"><Icon name="folder" size={30} /></span><span>Pictures</span></div>
         </div>
       ) : (
         <div class="installer-body">
           <img class="installer-logo" src={appIcon} alt="" width="64" height="64" />
-          <span>Installing Kaji…</span>
-          <div class="installation-track"><span></span></div>
+          <span class="installation-status"><span class="installing-label">Installing Kaji…</span><span class="ready-label">Kaji is ready.</span></span>
+          <div class="installation-track"><span class="installation-progress"></span></div>
         </div>
       )}
     </div>
@@ -50,28 +50,77 @@ const { step } = Astro.props;
   .window-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 0 14px; background: #f7f9fd; border-bottom: 1px solid #e9edf5; color: var(--muted); font-size: 12px; }
   .window-title { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
   .window-title img { border-radius: 3px; }
-  .window-controls { display: flex; align-items: center; gap: 18px; font-size: 16px; line-height: 1; }
-  .window-controls span:nth-child(2) { font-size: 14px; }
+  .window-controls { display: flex; align-items: center; gap: 14px; }
   .file-list { display: grid; gap: 10px; padding: 20px 12px 22px; }
   .folder-row { display: flex; align-items: center; gap: 14px; min-height: 34px; padding-inline: 12px; color: #69758a; font-size: 13px; }
-  .folder-shape { display: block; position: relative; width: 30px; height: 23px; border-radius: 4px; background: #e0e5ed; }
-  .folder-shape::before { position: absolute; top: -4px; left: 0; width: 14px; height: 6px; border-radius: 3px 3px 0 0; background: inherit; content: ''; }
+  .folder-shape { display: flex; color: #e0e5ed; }
   .installer-file { position: relative; display: flex; align-items: center; gap: 12px; min-height: 54px; padding: 8px 12px; border: 1px solid #b4c9ef; border-radius: 7px; background: #e0eaff; color: var(--ink); }
   .installer-file img { flex: 0 0 36px; border-radius: 7px; }
   .installer-file strong { font-size: 16px; font-weight: 600; letter-spacing: -.025em; }
+  .installer-file::after { position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 2px #7298e3; opacity: 0; pointer-events: none; content: ''; }
   .file-cursor { position: absolute; right: 8px; bottom: -13px; width: 31px; height: 36px; color: var(--ink); filter: drop-shadow(0 1px 1px white) drop-shadow(1px 0 0 white) drop-shadow(-1px 0 0 white); }
   .file-cursor :global(svg) { display: block; width: 100%; height: 100%; fill: currentColor; }
   .windows-prompt { padding: 20px 18px 18px; border: 1px solid #1459c5; border-radius: 9px; background: #0751c5; color: white; font-family: 'Segoe UI', var(--font-body); }
   .prompt-title { display: block; margin-bottom: 9px; font-size: 17px; font-weight: 600; line-height: 1.25; letter-spacing: -.02em; }
   .windows-prompt p { margin: 0; font-size: 14px; line-height: 1.45; }
-  .more-info { display: inline-block; margin-top: 8px; font-size: 14px; line-height: 1.4; text-decoration: underline; text-underline-offset: 3px; }
+  .more-info { position: relative; display: inline-block; margin-top: 8px; font-size: 14px; line-height: 1.4; text-decoration: underline; text-underline-offset: 3px; }
   .prompt-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 17px; font-size: 13px; font-weight: 600; }
   .prompt-actions > span { display: grid; place-items: center; min-height: 35px; padding: 5px 12px; border: 1px solid #fff; border-radius: 2px; white-space: nowrap; }
-  .run-anyway { background: white; color: #102652; }
+  .run-anyway { position: relative; background: white; color: #102652; }
+  .prompt-cursor { position: absolute; z-index: 1; top: 50%; left: 50%; width: 25px; height: 29px; color: white; opacity: 0; pointer-events: none; filter: drop-shadow(0 1px 1px #102652) drop-shadow(1px 0 0 #102652); }
+  .prompt-cursor :global(svg) { display: block; width: 100%; height: 100%; fill: currentColor; }
+  .run-cursor { color: #102652; filter: drop-shadow(0 1px 1px white) drop-shadow(1px 0 0 white); }
   .installer-body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; min-height: 185px; padding: 24px 24px 27px; color: var(--blue); font-size: 16px; }
   .installer-logo { border-radius: 13px; box-shadow: 0 5px 12px rgb(9 49 141 / 12%); }
   .installation-track { width: 100%; height: 10px; overflow: hidden; border-radius: 5px; background: #dce1ea; }
-  .installation-track span { display: block; width: 70%; height: 100%; border-radius: inherit; background: #1761ed; }
+  .installation-track span { display: block; width: 100%; height: 100%; border-radius: inherit; background: #1761ed; transform: scaleX(.7); transform-origin: left; }
+  .installation-status { display: grid; }
+  .installation-status > span { grid-area: 1 / 1; }
+  .ready-label { opacity: 0; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :global(.installation[data-demo-playing]) .file-cursor { animation: file-cursor 14s infinite; }
+    :global(.installation[data-demo-playing]) .installer-file::after { animation: file-selection 14s infinite; }
+    :global(.installation[data-demo-playing]) .more-cursor { animation: more-cursor 14s infinite; }
+    :global(.installation[data-demo-playing]) .run-cursor { animation: run-cursor 14s infinite; }
+    :global(.installation[data-demo-playing]) .run-anyway { animation: reveal-run 14s infinite; }
+    :global(.installation[data-demo-playing]) .installation-progress { animation: install-progress 14s linear infinite; }
+    :global(.installation[data-demo-playing]) .installing-label { animation: installing-label 14s infinite; }
+    :global(.installation[data-demo-playing]) .ready-label { animation: ready-label 14s infinite; }
+    :global(.installation[data-demo-playing]) :is(.file-cursor, .more-cursor, .run-cursor) { animation-timing-function: cubic-bezier(.77, 0, .175, 1); }
+    :global(.installation[data-demo-paused]) :is(.file-cursor, .more-cursor, .run-cursor, .run-anyway, .installation-progress, .installing-label, .ready-label),
+    :global(.installation[data-demo-paused]) .installer-file::after { animation-play-state: paused; }
+  }
+  @keyframes file-cursor {
+    0% { opacity: 0; transform: translate(16px, 16px); }
+    4% { opacity: 1; }
+    11%, 12% { opacity: 1; transform: translate(-35px, -8px); animation-timing-function: cubic-bezier(.77, 0, .175, 1); }
+    13%, 15% { transform: translate(-35px, -8px) scale(.95); }
+    14%, 17% { transform: translate(-35px, -8px) scale(1); }
+    19% { opacity: 1; }
+    21%, 100% { opacity: 0; transform: translate(-35px, -8px); }
+  }
+  @keyframes file-selection { 0%, 11% { opacity: 0; } 13%, 18% { opacity: .8; } 21%, 100% { opacity: 0; } }
+  @keyframes more-cursor {
+    0%, 21% { opacity: 0; transform: translate(24px, 18px); }
+    24% { opacity: 1; }
+    28%, 30% { opacity: 1; transform: translate(0, 0); }
+    31% { transform: translate(0, 0) scale(.95); }
+    32% { opacity: 1; transform: translate(0, 0); }
+    34%, 100% { opacity: 0; transform: translate(0, 0); }
+  }
+  @keyframes run-cursor {
+    0%, 34% { opacity: 0; transform: translate(-20px, -12px); }
+    36% { opacity: 1; }
+    40%, 41% { opacity: 1; transform: translate(0, 0); }
+    42% { transform: translate(0, 0) scale(.95); }
+    43% { opacity: 1; transform: translate(0, 0); }
+    46%, 100% { opacity: 0; transform: translate(0, 0); }
+  }
+  @keyframes reveal-run { 0%, 30% { opacity: 0; } 33%, 100% { opacity: 1; } }
+  @keyframes install-progress { 0%, 46% { transform: scaleX(.03); } 70%, 100% { transform: scaleX(1); } }
+  @keyframes installing-label { 0%, 70% { opacity: 1; } 72%, 100% { opacity: 0; } }
+  @keyframes ready-label { 0%, 70% { opacity: 0; } 72%, 100% { opacity: 1; } }
 
   @container (max-width: 300px) {
     .window-bar { padding-inline: 10px; font-size: 11px; }
