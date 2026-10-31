@@ -3,6 +3,8 @@ import kajiLogo from '../../../logo/kaji-logo.svg?url';
 import checkSvg from 'remixicon/icons/System/check-line.svg?raw';
 import pauseSvg from 'remixicon/icons/Media/pause-fill.svg?raw';
 import cursorSvg from 'remixicon/icons/Development/cursor-fill.svg?raw';
+import folderSvg from 'remixicon/icons/Document/folder-open-line.svg?raw';
+import settingsSvg from 'remixicon/icons/System/settings-3-line.svg?raw';
 import boldSvg from 'remixicon/icons/Editor/bold.svg?raw';
 import italicSvg from 'remixicon/icons/Editor/italic.svg?raw';
 import underlineSvg from 'remixicon/icons/Editor/underline.svg?raw';
@@ -13,7 +15,7 @@ interface Props { kind: 'guide' | 'head' | 'control' }
 const { kind } = Astro.props;
 const descriptions = {
   guide: 'Step-by-step guidance highlights the Align Center control in a document editor.',
-  head: 'A large Kaji cursor inside a circular dwell timer, beside a highlighted Click target and a Head tracking chip.',
+  head: 'Head control window with an Open target, a Kaji cursor inside a pink dwell timer, Open, Click and Settings controls, and a plain Head tracking active label.',
   control: 'Guide and Assist modes, a request to approve an action, and a prominent Pause Kaji control.',
 };
 ---
@@ -22,7 +24,7 @@ const descriptions = {
     <div class:list={['window-bar', { 'control-bar': kind === 'control' }]}>
       {kind === 'control' ? <img class="kaji-logo" src={kajiLogo} alt="" width="82" height="32" />
         : kind === 'guide' ? <span class="window-title"><span class="document-icon icon" set:html={wordSvg} /><span class="app-name">Document</span></span>
-        : <span class="window-title">Dwell click</span>}
+        : <span class="window-title">Head control</span>}
       <span class="window-controls"><svg viewBox="0 0 68 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 9h10M29 4h9v9h-9zM55 4l9 9m0-9-9 9" /></svg></span>
     </div>
     {kind === 'guide' ? <>
@@ -46,14 +48,23 @@ const descriptions = {
       <div class="guide-footer"><span class="step-marker">1</span><div class="step-copy"><strong>Center your paragraph</strong><span>Step 1 of 2 · Choose the highlighted control.</span></div></div>
     </> : kind === 'head' ? <>
       <div class="head-body">
-        <span class="tracking-chip">Head tracking</span>
         <div class="head-stage">
+          <div class="dwell-target"><span class="target-icon icon" set:html={folderSvg} /><span>Open</span></div>
           <div class="dwell-visual">
             <svg class="dwell-ring" viewBox="0 0 200 200" fill="none"><circle class="ring-track" cx="100" cy="100" r="86" stroke-width="7" /><circle class="ring-progress" cx="100" cy="100" r="86" stroke-width="7" pathLength="100" stroke-dasharray="100" stroke-dashoffset="27" transform="rotate(-90 100 100)" /></svg>
             <img class="dwell-cursor" src="/art/cursor.png" alt="" width="150" height="165" loading="lazy" />
           </div>
-          <div class="dwell-target"><span class="target-icon icon" set:html={cursorSvg} /><span>Click</span></div>
+          <span class="tracking-chip">Head tracking active</span>
         </div>
+        <div class="head-tools">
+          <span class="head-tool"><span class="icon" set:html={folderSvg} /><span>Open</span></span>
+          <span class="head-tool selected-tool"><span class="icon" set:html={cursorSvg} /><span>Click</span></span>
+          <span class="head-tool"><span class="icon" set:html={settingsSvg} /><span>Settings</span></span>
+        </div>
+      </div>
+      <div class="head-footer">
+        <div class="dwell-instruction"><strong>Hover on target for 0.9 seconds.</strong><span>Hold steady to click.</span></div>
+        <div class="head-actions"><span>Pause</span><span>Reset</span></div>
       </div>
     </> : <>
       <div class="control-body">
@@ -112,16 +123,26 @@ const descriptions = {
   .step-copy strong { font-size: 13px; }
   .step-copy span { margin-top: 3px; font-size: 11px; color: var(--muted); }
   .head { transform: rotate(-1.5deg); }
-  .head-body { padding: 22px 32px 36px; }
-  .tracking-chip { display: inline-flex; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-size: 11px; line-height: 1.4; }
-  .head-stage { display: grid; grid-template-columns: 1.15fr 1fr; align-items: center; gap: 24px; min-height: 260px; }
-  .dwell-visual { position: relative; width: min(220px, 40cqw); aspect-ratio: 1; justify-self: center; }
+  .head .window-title { font-size: 14px; font-weight: 600; }
+  .head-body { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr); gap: 22px; padding: 18px 20px; }
+  .head-stage { position: relative; min-width: 0; min-height: 252px; border-radius: 15px; background: #f5f8fd; }
+  .tracking-chip { position: absolute; left: 12px; bottom: 12px; display: inline-flex; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: white; color: var(--blue); font-size: 10px; line-height: 1.4; }
+  .dwell-visual { position: absolute; z-index: 1; left: 40%; top: 38%; width: 47%; aspect-ratio: 1; }
   .dwell-ring { display: block; width: 100%; height: 100%; }
-  .ring-track { stroke: #e4e9f3; }
-  .ring-progress { stroke: var(--blue); stroke-linecap: round; }
-  .dwell-cursor { position: absolute; width: 76%; height: auto; left: 17%; top: 12%; image-rendering: pixelated; transform: rotate(-6deg); }
-  .dwell-target { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; max-width: 180px; min-height: 96px; justify-self: center; padding: 18px; border: 2px solid var(--pink-display); border-radius: 12px; background: #fff4fa; color: var(--blue); font-size: 20px; font-weight: 600; box-shadow: 0 5px 16px #09318d08; }
-  .target-icon { width: 26px; height: 26px; }
+  .ring-track { stroke: #d4dce9; }
+  .ring-progress { stroke: var(--pink-display); stroke-linecap: round; }
+  .dwell-cursor { position: absolute; width: 62%; height: auto; left: 24%; top: 17%; image-rendering: pixelated; transform: rotate(-6deg); }
+  .dwell-target { position: absolute; top: 27%; left: 14%; display: flex; align-items: center; justify-content: center; gap: 12px; width: 62%; min-height: 66px; padding: 14px; border: 1px solid var(--pink); border-radius: 10px; background: #fff3fa; color: var(--blue); font-size: 21px; font-weight: 600; }
+  .target-icon { width: 25px; height: 25px; }
+  .head-tools { display: grid; align-content: center; gap: 14px; }
+  .head-tool { display: flex; align-items: center; gap: 10px; min-height: 59px; padding: 12px 14px; border: 1px solid #e4eaf4; border-radius: 10px; color: var(--blue); font-size: 13px; font-weight: 500; }
+  .head-tool .icon { width: 20px; height: 20px; }
+  .selected-tool { border-color: var(--pink-display); background: #fff3fa; }
+  .head-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 20px; border-top: 1px solid #e4eaf4; }
+  .dwell-instruction strong, .dwell-instruction>span { display: block; }
+  .dwell-instruction strong { font-size: 11px; font-weight: 600; }
+  .dwell-instruction>span { margin-top: 4px; color: var(--muted); font-size: 10px; }
+  .head-actions { display: flex; gap: 24px; color: var(--blue); font-size: 11px; font-weight: 600; }
   .control { max-width: 560px; margin-inline: auto; }
   .control-bar { min-height: 66px; padding-inline: 25px; background: white; }
   .kaji-logo { display: block; width: 82px; height: 32px; object-fit: contain; }
@@ -148,9 +169,15 @@ const descriptions = {
   .pause-control small { display: block; font-size: 11px; font-weight: 400; margin-top: 5px; }
   @container (max-width: 450px) {
     .wide-menu { display: none; }
-    .head-body { padding: 18px 22px 28px; }
-    .head-stage { min-height: 240px; gap: 18px; }
-    .dwell-target { font-size: 18px; min-height: 78px; padding: 12px; gap: 8px; }
+    .head-body { gap: 14px; padding: 14px; }
+    .head-stage { min-height: 214px; }
+    .dwell-target { font-size: 17px; min-height: 58px; padding: 10px; gap: 8px; }
+    .head-tools { gap: 10px; }
+    .head-tool { gap: 8px; min-height: 53px; padding: 10px; font-size: 11px; }
+    .head-tool .icon { width: 18px; height: 18px; }
+    .tracking-chip { left: 10px; bottom: 10px; padding: 5px 8px; font-size: 9px; }
+    .head-footer { padding: 14px; }
+    .head-actions { gap: 16px; }
     .mode-choice { padding: 14px; }
     .control-bar { min-height: 56px; padding-inline: 18px; }
     .control-body { padding-inline: 18px; gap: 12px; }
@@ -172,11 +199,18 @@ const descriptions = {
     .document-page { padding: 14px 12px; }
     .document-heading { font-size: 17px; }
     .guide-footer { gap: 8px; padding-inline: 10px; }
-    .head-body { padding-inline: 16px; }
-    .head-stage { gap: 12px; min-height: 210px; }
-    .dwell-visual { width: 42cqw; }
-    .dwell-target { gap: 6px; font-size: 16px; padding: 10px; min-height: 72px; }
+    .head-body { gap: 10px; padding: 10px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+    .head-stage { min-height: 190px; border-radius: 10px; }
+    .dwell-visual { left: 37%; top: 40%; width: 55%; }
+    .dwell-target { left: 10%; width: 72%; gap: 6px; font-size: 16px; padding: 8px; min-height: 52px; }
     .target-icon { width: 20px; height: 20px; }
+    .head-tool { gap: 6px; min-height: 48px; padding: 8px; font-size: 10px; }
+    .head-tool .icon { width: 16px; height: 16px; }
+    .tracking-chip { left: 7px; bottom: 8px; padding: 4px 6px; font-size: 8px; }
+    .head-footer { padding: 12px 10px; gap: 10px; }
+    .dwell-instruction strong { font-size: 9px; }
+    .dwell-instruction>span, .head-actions { font-size: 9px; }
+    .head-actions { gap: 12px; }
     .control-body { padding-inline: 12px; }
     .mode-choices { gap: 8px; }
     .mode-choice { padding-inline: 10px; }
@@ -185,6 +219,59 @@ const descriptions = {
     .permission-actions .control-shape { min-width: 0; flex: 1; }
     .mode-title { font-size: 19px; }
     .pause-control { padding: 12px; gap: 10px; }
+  }
+  @media (max-width: 767px) {
+    .product-demo { border-radius: 14px; }
+    .window-bar { min-height: 40px; padding: 9px 12px; border-radius: 13px 13px 0 0; }
+    .window-controls { flex-basis: 58px; }
+    .window-controls svg { width: 58px; height: 14px; }
+    .document-icon { width: 19px; height: 19px; }
+    .editor-menu { height: 30px; padding-inline: 12px; gap: 16px; font-size: 10px; }
+    .editor-ribbon { gap: 10px; padding: 12px; }
+    .format-tools { gap: 10px; }
+    .font-readout { font-size: 10px; }
+    .text-tools { gap: 10px; }
+    .text-tools .icon { width: 16px; height: 16px; }
+    .font-color { font-size: 17px; }
+    .align-center { min-width: 78px; min-height: 64px; padding: 8px; font-size: 9px; }
+    .align-center .icon { width: 24px; height: 24px; }
+    .guide-callout { top: calc(100% + 9px); right: -4px; padding: 7px 10px; font-size: 11px; }
+    .editor-canvas { padding: 24px 16px 0; }
+    .document-page { min-height: 120px; padding: 16px; font-size: 10px; }
+    .document-heading { font-size: 16px; }
+    .document-rule { height: 5px; margin-top: 10px; }
+    .guide-footer { min-height: 50px; gap: 8px; padding: 8px 10px; }
+    .step-marker { flex-basis: 22px; width: 22px; height: 22px; font-size: 11px; }
+    .step-copy strong { font-size: 11px; }
+    .step-copy span { font-size: 9px; }
+    .head .window-title { font-size: 12px; }
+    .head-body { gap: 10px; padding: 10px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+    .head-stage { min-height: clamp(164px, 55cqw, 200px); border-radius: 10px; }
+    .dwell-target { top: 25%; left: 10%; width: 72%; min-height: 44px; padding: 8px; gap: 6px; font-size: 14px; }
+    .target-icon { width: 19px; height: 19px; }
+    .dwell-visual { top: 36%; left: 42%; width: 50%; }
+    .head-tool { min-height: 44px; gap: 6px; padding: 8px; font-size: 10px; }
+    .head-tool .icon { width: 16px; height: 16px; }
+    .tracking-chip { left: 7px; bottom: 8px; padding: 4px 6px; font-size: 8px; }
+    .head-footer { gap: 10px; padding: 12px 10px; }
+    .dwell-instruction strong, .dwell-instruction>span, .head-actions { font-size: 9px; }
+    .head-actions { gap: 12px; }
+    .control-bar { min-height: 48px; padding-inline: 14px; }
+    .kaji-logo { width: 70px; height: 28px; }
+    .control-body { gap: 12px; padding: 0 14px 18px; }
+    .mode-choice { padding: 12px; }
+    .mode-symbol { width: 23px; height: 23px; margin-bottom: 8px; }
+    .mode-title { font-size: 18px; }
+    .mode-description { font-size: 10px; }
+    .permission-panel { padding: 12px; }
+    .permission-copy strong { font-size: 15px; }
+    .permission-copy span { font-size: 11px; }
+    .permission-preview { padding: 7px 8px; font-size: 11px; }
+    .permission-actions { gap: 8px; margin-top: 12px; }
+    .permission-actions .control-shape { min-width: 0; min-height: 34px; padding: 7px 12px; font-size: 11px; }
+    .pause-control { min-height: 62px; gap: 10px; padding: 12px; font-size: 14px; }
+    .pause-control .icon { width: 30px; height: 30px; padding: 7px; }
+    .pause-control small { font-size: 9px; margin-top: 3px; }
   }
   @media (forced-colors: active) {
     .align-center, .mode-choice.selected, .dwell-target { outline: 2px solid Highlight; outline-offset: -3px; }

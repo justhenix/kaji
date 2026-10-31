@@ -28,6 +28,9 @@ for (const width of [1440, 1024, 768, 390, 320, 2560]) {
     const overflow = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }));
     expect(overflow.content).toBeLessThanOrEqual(overflow.viewport);
     await page.screenshot({ path: new URL(`home-${width}.png`, output).pathname.replace(/^\/(?=[A-Z]:)/, ''), fullPage: true });
+    if (width === 390 || width === 320) {
+      await page.locator('#head').screenshot({ path: new URL(`head-mobile-${width}.png`, output).pathname.replace(/^\/(?=[A-Z]:)/, '') });
+    }
   });
 }
 
@@ -66,13 +69,16 @@ await check('feature cards are static illustrations without extra captions', asy
   await expect(page.locator('.feature figcaption, .feature .note')).toHaveCount(0);
   await expect(page.locator('astro-island[component-url*="ProductDemo"]')).toHaveCount(0);
 });
-await check('dwell visual uses a cursor, timer, target and plain tracking chip', async () => {
+await check('head control matches the reference without LEDs or doodles', async () => {
   const head = page.locator('.product-demo.head');
   await head.scrollIntoViewIfNeeded();
-  await expect(head.locator('.tracking-chip')).toHaveText('Head tracking');
+  await expect(head.locator('.window-title')).toHaveText('Head control');
+  await expect(head.locator('.tracking-chip')).toHaveText('Head tracking active');
   await expect(head.locator('.tracking-chip svg, .tracking-chip i')).toHaveCount(0);
   await expect(head.locator('.dwell-cursor, .dwell-ring, .dwell-target')).toHaveCount(3);
-  await expect(head.locator('.face-panel, .face-landmarks, .head-footer')).toHaveCount(0);
+  await expect(head.locator('.head-tool')).toHaveText(['Open', 'Click', 'Settings']);
+  await expect(head.locator('.dwell-instruction strong')).toHaveText('Hover on target for 0.9 seconds.');
+  await expect(head.locator('.face-panel, .face-landmarks, .led, .doodle')).toHaveCount(0);
   await head.screenshot({ path: new URL('dwell-static.png', output).pathname.replace(/^\/(?=[A-Z]:)/, '') });
 });
 

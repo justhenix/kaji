@@ -36,5 +36,15 @@ const { number, kind, title, accent, copy, reverse = false } = Astro.props;
   #control .feature-dither { opacity: .34; }
   .control-pointer { width: 145px; position: absolute; right: -46px; bottom: -45px; z-index: 2; transform: rotate(-8deg); }
   @media (max-width: 1023px) { .feature { padding-block: 88px; min-height: 620px; } .feature-inner { gap: 34px; } h2 { font-size: 44px; } #control h2 { font-size: 42px; } p { font-size: 18px; margin-top: 22px; } .feature-dither { width: 1200px; } }
-  @media (max-width: 767px) { .feature { padding-block: 72px; min-height: 0; } .feature-inner, .reverse .feature-inner { grid-template-columns: 1fr; gap: 44px; max-width: 560px; } .feature-copy, .reverse .feature-copy { grid-column: 1; grid-row: 1; } .feature-visual, .reverse .feature-visual { grid-column: 1; grid-row: 2; } h2, #control h2 { font-size: clamp(40px, 8.5vw, 50px); } .index { margin-bottom: 22px; } p { max-width: 38ch; } .feature-dither, .reverse .feature-dither { top: auto; bottom: 0; width: 950px; transform: translateX(-50%); mask-image: linear-gradient(to bottom, transparent 20%, #000 48%); } .control-pointer { width: 110px; right: -14px; bottom: -32px; } }
+  @media (max-width: 767px) {
+    .feature { padding-block: 56px; min-height: 0; }
+    .feature-inner, .reverse .feature-inner { grid-template-columns: 1fr; gap: 32px; max-width: 560px; }
+    .feature-copy, .reverse .feature-copy { grid-column: 1; grid-row: 1; }
+    .feature-visual, .reverse .feature-visual { grid-column: 1; grid-row: 2; width: calc(100% - 24px); max-width: 400px; margin-inline: auto; }
+    h2, #control h2 { font-size: clamp(40px, 8.5vw, 50px); }
+    .index { margin-bottom: 22px; }
+    p { max-width: 38ch; }
+    .feature-dither, .reverse .feature-dither { top: auto; bottom: 0; width: 950px; transform: translateX(-50%); mask-image: linear-gradient(to bottom, transparent 20%, #000 48%); }
+    .control-pointer { width: 90px; right: -12px; bottom: -20px; }
+  }
 </style>
