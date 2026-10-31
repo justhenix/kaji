@@ -1,0 +1,13 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Hero from '../components/Hero.astro';
+import FeatureSection from '../components/FeatureSection.astro';
+import FinalCTA from '../components/FinalCTA.astro';
+---
+<BaseLayout>
+  <Hero />
+  <FeatureSection number="01" kind="guide" title="Know" accent="where to go." copy="Kaji highlights the next control and explains what to do, step by step." />
+  <FeatureSection number="02" kind="head" title="Click without" accent="the strain." copy="Move the cursor with your head and dwell to click, with fewer repeated mouse actions." reverse />
+  <FeatureSection number="03" kind="control" title="Stay in" accent="control." copy="Follow guidance, approve assisted actions, or stop Kaji whenever you need to." />
+  <FinalCTA />
+</BaseLayout>

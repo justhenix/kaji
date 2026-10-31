@@ -1,0 +1,40 @@
+---
+import DitherSand from './DitherSand.svelte';
+import ProductDemo from './ProductDemo.astro';
+interface Props { number: string; kind: 'guide' | 'head' | 'control'; title: string; accent: string; copy: string; reverse?: boolean }
+const { number, kind, title, accent, copy, reverse = false } = Astro.props;
+---
+<section class:list={['feature', { reverse }]} id={kind === 'guide' ? 'how-it-works' : kind} aria-labelledby={`title-${kind}`}>
+  <div class="feature-dither"><DitherSand kind={kind} client:visible /></div>
+  <div class="feature-inner container">
+    <div class="feature-copy">
+      <span class="index" aria-hidden="true">{number}<span></span></span>
+      <h2 id={`title-${kind}`}>{title}{kind === 'control' ? ' ' : <br />}<span class="accent">{accent}</span></h2>
+      <p>{copy}</p>
+    </div>
+    <figure class="feature-visual">
+      <ProductDemo kind={kind} />
+      {kind === 'control' && <div class="control-pointer"><DitherSand kind="cursor" cursor client:visible /></div>}
+    </figure>
+  </div>
+</section>
+<style>
+  .feature { padding-block: 120px; min-height: 720px; overflow: clip; position: relative; isolation: isolate; display: flex; align-items: center; }
+  .feature-inner { display: grid; grid-template-columns: 1.25fr 1fr; align-items: center; gap: clamp(48px, 5vw, 80px); }
+  .feature-copy { grid-column: 2; grid-row: 1; position: relative; z-index: 2; background: white; }
+  .feature-visual { grid-column: 1; grid-row: 1; position: relative; isolation: isolate; min-width: 0; }
+  .reverse .feature-copy { grid-column: 1; }
+  .reverse .feature-visual { grid-column: 2; }
+  .reverse .feature-inner { grid-template-columns: 1fr 1.25fr; }
+  .index { font-size: 17px; line-height: 1; font-weight: 600; color: var(--blue); display: flex; align-items: center; gap: 16px; margin-bottom: 28px; }
+  .index span { height: 1px; width: 43px; background: #b9c8e9; }
+  h2 { font-size: clamp(44px, 4.9vw, 70px); }
+  #control h2 { font-size: clamp(43px, 4.4vw, 63px); }
+  p { max-width: 36ch; font-size: 21px; color: var(--muted); line-height: 1.5; margin-top: 25px; }
+  .feature-dither { position: absolute; z-index: -1; width: max(100%, 1440px); left: 50%; top: 50%; transform: translate(-50%, -50%); opacity: .46; mask-image: linear-gradient(to right, #000 35%, #0009 47%, transparent 60%); }
+  .reverse .feature-dither { mask-image: linear-gradient(to left, #000 35%, #0009 47%, transparent 60%); }
+  #control .feature-dither { opacity: .34; }
+  .control-pointer { width: 145px; position: absolute; right: -46px; bottom: -45px; z-index: 2; transform: rotate(-8deg); }
+  @media (max-width: 1023px) { .feature { padding-block: 88px; min-height: 620px; } .feature-inner { gap: 34px; } h2 { font-size: 44px; } #control h2 { font-size: 42px; } p { font-size: 18px; margin-top: 22px; } .feature-dither { width: 1200px; } }
+  @media (max-width: 767px) { .feature { padding-block: 72px; min-height: 0; } .feature-inner, .reverse .feature-inner { grid-template-columns: 1fr; gap: 44px; max-width: 560px; } .feature-copy, .reverse .feature-copy { grid-column: 1; grid-row: 1; } .feature-visual, .reverse .feature-visual { grid-column: 1; grid-row: 2; } h2, #control h2 { font-size: clamp(40px, 8.5vw, 50px); } .index { margin-bottom: 22px; } p { max-width: 38ch; } .feature-dither, .reverse .feature-dither { top: auto; bottom: 0; width: 950px; transform: translateX(-50%); mask-image: linear-gradient(to bottom, transparent 20%, #000 48%); } .control-pointer { width: 110px; right: -14px; bottom: -32px; } }
+</style>

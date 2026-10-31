@@ -1,0 +1,31 @@
+---
+import DitherSand from './DitherSand.svelte';
+import Actions from './Actions.astro';
+import Icon from './Icon.astro';
+---
+<section class="hero" aria-labelledby="hero-title">
+  <div class="hero-wave"><DitherSand kind="hero" eager client:load /></div>
+  <div class="hero-copy container">
+    <h1 id="hero-title">steer your screen<br /><span class="accent">hands-free.</span></h1>
+    <p>An on-screen companion that points,<br class="desktop-break" /> assists, and clicks for you.</p>
+    <Actions />
+  </div>
+  <div class="hero-cursor"><DitherSand kind="cursor" cursor eager client:load /></div>
+  <a class="explore" href="#how-it-works">A new way to find your way <Icon name="down" size={17} /></a>
+</section>
+<style>
+  .hero { position: relative; isolation: isolate; overflow: clip; min-height: 772px; padding-top: 54px; padding-bottom: 54px; }
+  .hero-copy { position: relative; z-index: 1; text-align: center; pointer-events: none; }
+  h1 { margin-inline: auto; max-width: 1000px; }
+  p { font-size: clamp(17px, 1.55vw, 21px); line-height: 1.55; color: var(--muted); margin: 22px auto 26px; max-width: 500px; }
+  .hero-copy :global(a) { pointer-events: auto; }
+  .hero-wave { position: absolute; z-index: -1; width: max(100%, 1440px); left: 50%; transform: translateX(-50%); top: 0; opacity: .55; }
+  .hero-cursor { position: relative; z-index: 1; width: 292px; margin: 32px auto 0; transform: rotate(-7deg); }
+  .explore { position: relative; margin: 13px auto 0; display: flex; width: fit-content; min-height: 44px; padding-inline: 12px; align-items: center; gap: 14px; color: var(--muted); background: white; font-size: 12px; text-decoration: none; }
+  .explore:hover { color: var(--blue); }
+  .explore span { color: var(--blue); font-size: 18px; }
+  @media (min-width: 1700px) { .hero-wave { top: -60px; } }
+  @media (max-width: 900px) { .hero { min-height: 690px; padding-top: 44px; } .hero-wave { width: 1250px; top: 30px; } .hero-cursor { width: 250px; margin-top: 42px; } }
+  @media (max-width: 600px) { .hero { padding-top: 38px; min-height: 638px; padding-bottom: 28px; } .hero-wave { width: 930px; top: 190px; } p { margin-top: 20px; margin-bottom: 24px; max-width: 320px; } .desktop-break { display: none; } .hero-cursor { width: 208px; margin-top: 36px; } .explore { margin-top: 14px; } }
+  @media (max-width: 360px) { .hero :global(.actions) { gap: 8px 18px; } .hero :global(.button) { font-size: 14px; padding-inline: 14px; } }
+</style>

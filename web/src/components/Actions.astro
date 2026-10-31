@@ -1,0 +1,11 @@
+---
+import { site } from '../config/site';
+import Icon from './Icon.astro';
+---
+<div class="actions">
+  <a class="button" href="/download">
+    <Icon name="windows" />
+    {site.installer ? 'Download for Windows' : 'Get Kaji for Windows'}
+  </a>
+  <a class="text-link" href={site.github}>GitHub <span style="margin-left: 7px"><Icon name="external" size={17} /></span></a>
+</div>

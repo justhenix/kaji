@@ -1,0 +1,90 @@
+---
+import appIcon from '../../../logo/kaji-app-dark.svg?url';
+import cursor from 'remixicon/icons/Development/cursor-fill.svg?raw';
+import Icon from './Icon.astro';
+
+interface Props { step: 1 | 2 | 3 }
+const { step } = Astro.props;
+---
+<div class:list={['setup-art', `step-${step}`]} aria-hidden="true">
+  {step === 2 ? (
+    <div class="windows-prompt">
+      <strong class="prompt-title">Windows protected your PC</strong>
+      <p>Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.</p>
+      <span class="more-info">More info</span>
+      <div class="prompt-actions"><span class="run-anyway">Run anyway</span><span class="dont-run">Don't run</span></div>
+    </div>
+  ) : (
+    <div class="setup-window">
+      <div class="window-bar">
+        <span class="window-title">
+          {step === 1 ? <Icon name="down" size={16} /> : <img src={appIcon} alt="" width="14" height="14" />}
+          {step === 1 ? 'Downloads' : 'Kaji Setup'}
+        </span>
+        <span class="window-controls"><span>−</span><span>□</span><span>×</span></span>
+      </div>
+      {step === 1 ? (
+        <div class="file-list">
+          <div class="folder-row"><span class="folder-shape"></span><span>Documents</span></div>
+          <div class="installer-file">
+            <img src={appIcon} alt="" width="36" height="36" />
+            <strong>Kaji-Setup.exe</strong>
+            <span class="file-cursor" set:html={cursor} />
+          </div>
+          <div class="folder-row"><span class="folder-shape"></span><span>Screenshots</span></div>
+        </div>
+      ) : (
+        <div class="installer-body">
+          <img class="installer-logo" src={appIcon} alt="" width="64" height="64" />
+          <span>Installing Kaji…</span>
+          <div class="installation-track"><span></span></div>
+        </div>
+      )}
+    </div>
+  )}
+</div>
+<style>
+  .setup-art { container-type: inline-size; display: flex; align-items: center; justify-content: center; width: 100%; height: 280px; padding: 20px 24px 0; }
+  .setup-window, .windows-prompt { width: 100%; max-width: 318px; border-radius: 12px; box-shadow: 0 14px 32px -12px rgb(9 49 141 / 17%); }
+  .setup-window { overflow: hidden; border: 1px solid #d8e1ee; background: white; }
+  .window-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 0 14px; background: #f7f9fd; border-bottom: 1px solid #e9edf5; color: var(--muted); font-size: 12px; }
+  .window-title { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .window-title img { border-radius: 3px; }
+  .window-controls { display: flex; align-items: center; gap: 18px; font-size: 16px; line-height: 1; }
+  .window-controls span:nth-child(2) { font-size: 14px; }
+  .file-list { display: grid; gap: 10px; padding: 20px 12px 22px; }
+  .folder-row { display: flex; align-items: center; gap: 14px; min-height: 34px; padding-inline: 12px; color: #69758a; font-size: 13px; }
+  .folder-shape { display: block; position: relative; width: 30px; height: 23px; border-radius: 4px; background: #e0e5ed; }
+  .folder-shape::before { position: absolute; top: -4px; left: 0; width: 14px; height: 6px; border-radius: 3px 3px 0 0; background: inherit; content: ''; }
+  .installer-file { position: relative; display: flex; align-items: center; gap: 12px; min-height: 54px; padding: 8px 12px; border: 1px solid #b4c9ef; border-radius: 7px; background: #e0eaff; color: var(--ink); }
+  .installer-file img { flex: 0 0 36px; border-radius: 7px; }
+  .installer-file strong { font-size: 16px; font-weight: 600; letter-spacing: -.025em; }
+  .file-cursor { position: absolute; right: 8px; bottom: -13px; width: 31px; height: 36px; color: var(--ink); filter: drop-shadow(0 1px 1px white) drop-shadow(1px 0 0 white) drop-shadow(-1px 0 0 white); }
+  .file-cursor :global(svg) { display: block; width: 100%; height: 100%; fill: currentColor; }
+  .windows-prompt { padding: 20px 18px 18px; border: 1px solid #1459c5; border-radius: 9px; background: #0751c5; color: white; font-family: 'Segoe UI', var(--font-body); }
+  .prompt-title { display: block; margin-bottom: 9px; font-size: 17px; font-weight: 600; line-height: 1.25; letter-spacing: -.02em; }
+  .windows-prompt p { margin: 0; font-size: 14px; line-height: 1.45; }
+  .more-info { display: inline-block; margin-top: 8px; font-size: 14px; line-height: 1.4; text-decoration: underline; text-underline-offset: 3px; }
+  .prompt-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 17px; font-size: 13px; font-weight: 600; }
+  .prompt-actions > span { display: grid; place-items: center; min-height: 35px; padding: 5px 12px; border: 1px solid #fff; border-radius: 2px; white-space: nowrap; }
+  .run-anyway { background: white; color: #102652; }
+  .installer-body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; min-height: 185px; padding: 24px 24px 27px; color: var(--blue); font-size: 16px; }
+  .installer-logo { border-radius: 13px; box-shadow: 0 5px 12px rgb(9 49 141 / 12%); }
+  .installation-track { width: 100%; height: 10px; overflow: hidden; border-radius: 5px; background: #dce1ea; }
+  .installation-track span { display: block; width: 70%; height: 100%; border-radius: inherit; background: #1761ed; }
+
+  @container (max-width: 300px) {
+    .window-bar { padding-inline: 10px; font-size: 11px; }
+    .window-controls { gap: 12px; }
+    .file-list { padding-inline: 9px; }
+    .installer-file { gap: 9px; padding-inline: 9px; }
+    .installer-file strong { font-size: 14px; }
+    .windows-prompt { padding: 17px 14px; }
+    .prompt-title { font-size: 16px; }
+    .windows-prompt p { font-size: 13px; }
+    .prompt-actions > span { padding-inline: 10px; }
+    .installer-body { padding-inline: 18px; }
+  }
+
+  @media (max-width: 767px) { .setup-art { padding-inline: 18px; } }
+</style>

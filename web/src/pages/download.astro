@@ -1,0 +1,96 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import DitherSand from '../components/DitherSand.svelte';
+import DownloadStart from '../components/DownloadStart.svelte';
+import SetupIllustration from '../components/SetupIllustration.astro';
+import Icon from '../components/Icon.astro';
+import { site } from '../config/site';
+---
+<BaseLayout title="Download & setup — Kaji" description="Get Kaji for Windows and find your way through installation.">
+  <section class="download-page" aria-labelledby="download-title">
+    <div class="download-art" aria-hidden="true"><DitherSand kind="download" eager client:load /></div>
+    <div class="download-content">
+      <div class:list={['download-intro', { 'has-installer': site.installer }]}>
+        <h1 id="download-title">
+          <span class="headline-line">{site.installer ? 'Thanks for downloading!' : 'Get Kaji for Windows.'}</span>
+          <span class="headline-line">just a few <span class="accent">steps left</span></span>
+        </h1>
+        <div class="download-action">
+          {site.installer ? <DownloadStart url={site.installer} client:load /> : <a class="release-link" href={site.releases}>View Windows releases <Icon name="external" size={17} /></a>}
+        </div>
+      </div>
+      <ol class="installation" id="installation" aria-label="Installation guide">
+        <li>
+          <span class="step-number" aria-hidden="true">1</span>
+          <div class="step-card step-blue">
+            <SetupIllustration step={1} />
+            <p class="step-caption">Open the <strong>Kaji installer</strong> from your Downloads folder.</p>
+          </div>
+        </li>
+        <li>
+          <span class="step-number" aria-hidden="true">2</span>
+          <div class="step-card step-amber">
+            <SetupIllustration step={2} />
+            <p class="step-caption">Review the publisher and the Windows installation prompts.</p>
+          </div>
+        </li>
+        <li>
+          <span class="step-number" aria-hidden="true">3</span>
+          <div class="step-card step-mint">
+            <SetupIllustration step={3} />
+            <p class="step-caption">Let setup finish,<br />then open <strong>Kaji.</strong></p>
+          </div>
+        </li>
+      </ol>
+      <div class="download-help"><span>Made for Windows.</span><span class="help-divider" aria-hidden="true"></span><a href={site.github}>Need help? Visit GitHub <Icon name="external" size={15} /></a></div>
+    </div>
+  </section>
+</BaseLayout>
+<style>
+  .download-page { position: relative; isolation: isolate; overflow: clip; padding: 108px 0 56px; background: white; }
+  .download-art { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; opacity: .5; pointer-events: none; }
+  .download-content { width: min(1232px, calc(100% - var(--gutter) * 2)); margin-inline: auto; }
+  .download-intro { position: relative; width: fit-content; max-width: 100%; margin-inline: auto; text-align: center; background: white; }
+  h1 { max-width: 1160px; margin: 0; font-size: clamp(42px, 6vw, 86px); font-weight: 750; line-height: 1.02; letter-spacing: -.055em; }
+  .headline-line { display: block; }
+  .download-action { margin-top: 25px; color: var(--muted); }
+  .release-link { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; font-size: 17px; font-weight: 400; }
+  .download-action :global(p) { font-size: 20px; line-height: 1.5; }
+  .download-action :global(a) { display: inline-flex; align-items: center; min-height: 44px; }
+  .installation { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; gap: 18px; margin: 52px 0 0; padding: 0; list-style: none; scroll-margin-top: 40px; }
+  .installation li { display: flex; flex-direction: column; min-width: 0; }
+  .step-number { display: grid; place-items: center; flex: 0 0 40px; width: 40px; height: 40px; margin: 0 auto 9px; border-radius: 50%; background: var(--blue); color: white; font-family: var(--font-display); font-size: 23px; font-weight: 650; line-height: 1; }
+  .step-card { display: grid; grid-template-rows: 280px 1fr; flex: 1; min-height: 400px; border: 1px solid transparent; border-radius: 18px; }
+  .step-blue { border-color: #d8e5fb; background: #edf3ff; }
+  .step-amber { border-color: #f9edce; background: #fff9eb; }
+  .step-mint { border-color: #d1f1e7; background: #e8faf4; }
+  .step-caption { align-self: center; max-width: 29ch; margin: 0 auto; padding: 10px 24px 30px; color: var(--muted); font-size: 20px; font-weight: 400; line-height: 1.4; text-align: center; letter-spacing: -.025em; }
+  .step-caption strong { color: var(--ink); font-weight: 600; }
+  .download-help { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 16px 30px; width: fit-content; max-width: 100%; margin: 58px auto 0; background: white; color: var(--muted); font-size: 14px; }
+  .download-help a { display: inline-flex; align-items: center; gap: 5px; min-height: 44px; }
+  .help-divider { display: block; width: 1px; height: 17px; background: var(--border); }
+
+  @media (min-width: 768px) and (max-width: 1100px) {
+    .download-page { padding-top: 80px; }
+    .installation { gap: 14px; }
+    .step-card { grid-template-rows: 270px 1fr; }
+    .step-card :global(.setup-art) { height: 270px; padding-inline: 12px; }
+    .step-caption { padding-inline: 14px; font-size: 18px; }
+  }
+
+  @media (max-width: 767px) {
+    .download-page { padding: 58px 0 38px; }
+    .download-content { width: min(440px, calc(100% - 40px)); }
+    h1 { font-size: clamp(30px, 6.3vw, 46px); line-height: 1.07; letter-spacing: -.045em; }
+    .has-installer h1 { font-size: clamp(26px, 5.8vw, 42px); }
+    .download-action { margin-top: 18px; }
+    .release-link { font-size: 15px; }
+    .download-action :global(p) { font-size: 16px; }
+    .installation { grid-template-columns: 1fr; grid-auto-rows: 1fr; gap: 32px; margin-top: 34px; }
+    .step-number { margin-bottom: 10px; }
+    .step-card { min-height: 388px; }
+    .step-caption { max-width: 27ch; padding-inline: 20px; font-size: 20px; }
+    .download-help { flex-direction: column; gap: 2px; margin-top: 32px; font-size: 13px; }
+    .help-divider { display: none; }
+  }
+</style>
