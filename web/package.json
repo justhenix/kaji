@@ -1,0 +1,29 @@
+{
+  "name": "@kaji/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run scripts/prepare-assets.ts && bun --bun astro dev --host 127.0.0.1",
+    "check": "bun run scripts/prepare-assets.ts && bun --bun astro check && bun --bun svelte-check --tsconfig ./tsconfig.json",
+    "build": "bun run scripts/prepare-assets.ts && bun --bun astro build",
+    "preview": "bun --bun astro preview --host 127.0.0.1",
+    "test": "bun test ./tests/dither.test.ts",
+    "test:browser": "bun run tests/browser.ts"
+  },
+  "dependencies": {
+    "@astrojs/svelte": "^9.1.2",
+    "@fontsource-variable/figtree": "^5.3.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "astro": "^7.4.4",
+    "remixicon": "^4.9.1",
+    "svelte": "^5.57.3"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1",
+    "@types/bun": "^1.4.4",
+    "svelte-check": "^4.7.7",
+    "typescript": "5.9.3"
+  }
+}

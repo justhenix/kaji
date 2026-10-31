@@ -1,0 +1,14 @@
+{
+  "name": "kaji",
+  "private": true,
+  "packageManager": "bun@1.4.2",
+  "workspaces": ["web", "app"],
+  "scripts": {
+    "dev": "bun run --cwd web dev",
+    "check": "bun run --cwd web check",
+    "build": "bun run --cwd web build",
+    "preview": "bun run --cwd web preview",
+    "test": "bun run --cwd web test",
+    "test:browser": "bun run --cwd web test:browser"
+  }
+}
