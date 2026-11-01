@@ -8,6 +8,8 @@ Bun monorepo:
 - `app/` — desktop application workspace.
 - `logo/` — shared, original SVG brand assets.
 
+The Windows interaction engine lives in [`app/`](app/README.md): Tauri v2, local MediaPipe head tracking, Rust-owned Win32 execution, and isolated UI Automation inspection. See its [current verification report](app/docs/LIVE-TRACKING-FIX.md) for executed checks and incomplete human acceptance.
+
 ## Website
 
 Use Bun 1.4.2 or newer. From the repository root:

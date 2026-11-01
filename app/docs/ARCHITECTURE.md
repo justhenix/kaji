@@ -1,0 +1,29 @@
+# Kaji P0
+
+The Tauri v2 host has no product window. On explicit `--camera` launch, it creates a hidden, bundled sensor webview. Camera access is allowed only for that navigation-locked view; microphone and other permissions are denied. Windows camera privacy policy still applies. The Face Landmarker model and WASM are bundled, so runtime inference has no network dependency.
+
+`src/vision.worker.ts` runs MediaPipe off the webview thread with its default 0.5 confidence thresholds and up to two faces. The capture loop permits one inference and one IPC submission at a time, and uses decoded-frame counts to avoid refreshing the watchdog with repeated video frames. The first actual inference warms the detector before native authorization; that observation is discarded. The worker echoes the webview's capture timestamp, which is translated once to native monotonic time. Later observations retain their original capture times. Images are never logged. The Rust `Frame` boundary accepts normalized pose candidates with eye center/span, raw face count, capture time, session and sequence, not cursor deltas or clicks.
+
+`face.rs` associates observations with a clearly dominant foreground operator, then follows its center and changing eye span. Learned background detections cannot replace the operator. Ambiguous candidates pause input. This is geometric association, not proof of liveness or biometric identity.
+
+`control.rs` filters pose over 120 ms before calibration. A rolling window requires at least 20 observations within 0.025 of its median, at least 80% inliers, and at least one second of stable evidence. Head rotation maps to velocity with a dead zone and exponential smoothing. The native executor integrates the most recent fresh pose every 8 ms instead of moving only at camera frame rate. Raw neutral posture stops each axis without a smoothing tail. Dwell uses observed cursor coordinates, an anchored radius and departure hysteresis. Continuous movement records departure but cannot click. Missing-operator time never counts toward dwell or rearms a completed click. Initial calibration requires deliberate cursor departure before any click.
+
+`engine.rs` runs one native execution thread. Its mailbox stores only the latest observation. Rust rejects invalid, future, old and reordered frames: ingress age is limited to 180 ms, pending execution to 200 ms, and source heartbeat to 250 ms. Initializing, no-face, calibrating and tracking are distinct states. Missing or ambiguous live candidates immediately pause motion/clicks; reacquisition retains neutral for up to one second, then requires calibration again. A target-scoped session suppresses dwell outside its window without ending tracking. Foreign cursor movement, keyboard/mouse takeover, desktop loss, display changes and input failures stop the session. Stop invalidates authorization, clears the mailbox and preserves the first stop reason. A cancellation guard prevents late sensor warm-up from rearming input. Escape is observed on a separate message-pumping hook thread, independently of sensor and UIA work. The observer has its own 300 ms heartbeat; input ownership is exclusive across Kaji processes through a Windows kernel mutex.
+
+`native.rs` operates in per-monitor DPI awareness and physical screen pixels, including negative monitor origins. It uses tagged `SendInput` events and checks insertion counts. Click down/up are inserted together; partial insertion triggers a release attempt. It never holds a button across frames. Movement is confirmed through the cursor before further motion or dwell evaluation.
+
+`uia.rs` launches a disposable helper process in an MTA COM apartment for each read-only operation. Only serializable observations leave the process. A bounded control-view walk discovers up to 512 nodes and 24 levels. Timeouts and cancellation kill and reap the helper; a kill-on-close Windows Job Object also prevents workers surviving a crashed host. Resolution binds an element to its process lifetime, HWND and runtime IDs, with no control-type fallback. Each new inspection supersedes earlier tokens; tokens expire after 15 seconds. Clickable coordinates require current visibility, monitor containment and a matching hit-tested element or descendant. UIA results are observations, not authorization to inject input.
+
+The diagnostic executable uses JSONL over inherited stdin/stdout. Inspection runs off its command loop, so stop and cancellation remain available during UIA work. It binds no TCP ports and exposes no shell, keyboard typing, AI runtime, or arbitrary invocation interface.
+
+## Dependencies and build
+
+Verified against live registries on 2026-10-31: Tauri 2.12.5, tauri-build 2.7.4, Tauri CLI/API 2.12.4, windows-rs 0.62.2, MediaPipe Tasks Vision 1.2.0. Tauri v3 prereleases were deliberately excluded. Bun and Cargo lockfiles record dependency resolution. The pinned model URL and SHA256 are checked at build time.
+
+## Contracts for later work
+
+Future models and workflows consume observations and request native effects. They must not own Win32 handles, COM pointers or cursor injection. Observation tokens and capture timestamps must accompany proposed targets. Rust must validate them immediately before effects. User-visible workflows and authorization policy can be added when specified; P0 does not invent those workflows.
+
+## Limits
+
+This is Windows-only. Standard integrity input cannot control elevated applications or secure desktops. UIA providers may expose incomplete trees; truncated/skipped results are explicit. A successful input insertion does not prove an application changed. Tests must read the actual application's state. Camera geometry and dwell ergonomics require a person at the configured webcam; automated replay does not establish those results.
