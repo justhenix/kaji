@@ -1,0 +1,7 @@
+{
+  "identifier": "sensor",
+  "description": "Bundled local sensor may submit poses and stop; it cannot click or inspect.",
+  "webviews": ["sensor"],
+  "local": true,
+  "permissions": ["allow-sensor-ready", "allow-sensor-frame", "allow-sensor-fault"]
+}

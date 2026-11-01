@@ -1,5 +1,26 @@
 {
   "name": "@kaji/app",
   "private": true,
-  "version": "0.0.0"
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "assets": "bun scripts/assets.ts",
+    "build:worker": "bun scripts/build.ts",
+    "check": "tsc --noEmit",
+    "test": "bun test src scripts",
+    "native:test": "cargo test --locked --manifest-path src-tauri/Cargo.toml",
+    "native:build": "cargo build --locked --manifest-path src-tauri/Cargo.toml --bins",
+    "build": "bun run build:worker && bun run native:build",
+    "tauri": "tauri",
+    "diagnose": "cargo run --manifest-path src-tauri/Cargo.toml --bin kaji-diag --"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "1.2.0",
+    "@tauri-apps/api": "2.12.4"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4",
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  }
 }
