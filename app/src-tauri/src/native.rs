@@ -2,7 +2,7 @@ use crate::{Result, control::Point};
 use serde::{Deserialize, Serialize};
 use std::sync::{
     Arc, OnceLock,
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering},
     mpsc,
 };
 use std::thread::{self, JoinHandle};
@@ -36,6 +36,8 @@ pub struct Signals {
     pub manual: AtomicU64,
     pub observer_alive: AtomicBool,
     pub observer_pulse: AtomicU64,
+    pub shared_target: AtomicIsize,
+    pub target_activity: AtomicU64,
 }
 
 pub struct InputLease(HANDLE);
@@ -264,6 +266,15 @@ unsafe extern "system" fn mouse_hook(code: i32, w: WPARAM, l: LPARAM) -> LRESULT
             && let Some(signals) = SIGNALS.get()
         {
             signals.manual.fetch_add(1, Ordering::SeqCst);
+            if w.0 as u32 != WM_MOUSEMOVE {
+                let hwnd = window_at(Point {
+                    x: event.pt.x as f64,
+                    y: event.pt.y as f64,
+                });
+                if hwnd != 0 && hwnd == signals.shared_target.load(Ordering::SeqCst) {
+                    signals.target_activity.fetch_add(1, Ordering::SeqCst);
+                }
+            }
         }
     }
     unsafe { CallNextHookEx(None, code, w, l) }
@@ -279,6 +290,10 @@ unsafe extern "system" fn keyboard_hook(code: i32, w: WPARAM, l: LPARAM) -> LRES
             }
             if event.dwExtraInfo != INPUT_TAG {
                 signals.manual.fetch_add(1, Ordering::SeqCst);
+                let hwnd = foreground();
+                if hwnd != 0 && hwnd == signals.shared_target.load(Ordering::SeqCst) {
+                    signals.target_activity.fetch_add(1, Ordering::SeqCst);
+                }
             }
         }
     }

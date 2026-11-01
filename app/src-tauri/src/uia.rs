@@ -17,14 +17,14 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use windows::Win32::{
-    Foundation::{HWND, POINT},
+    Foundation::{HWND, LPARAM, POINT, WPARAM},
     System::{
         Com::*,
         JobObjects::*,
         Ole::*,
         Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
     },
-    UI::Accessibility::*,
+    UI::{Accessibility::*, Input::KeyboardAndMouse::IsWindowEnabled, WindowsAndMessaging::*},
 };
 
 const LIMIT: usize = 512;
@@ -69,12 +69,14 @@ pub struct Snapshot {
 pub enum Request {
     Inspect { hwnd: isize },
     Resolve { identity: Identity },
+    Invoke { identity: Identity },
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Response {
     Snapshot(Snapshot),
     Element(Element),
+    Invoked { element: Element, backend: String },
 }
 
 pub struct Inspector {
@@ -94,6 +96,13 @@ impl Inspector {
         self.cancel.fetch_add(1, Ordering::SeqCst);
     }
     pub fn inspect(&self, hwnd: Option<isize>) -> Result<Snapshot> {
+        self.inspect_checked(hwnd, || Ok(()))
+    }
+    pub(crate) fn inspect_checked(
+        &self,
+        hwnd: Option<isize>,
+        authorize: impl Fn() -> Result<()>,
+    ) -> Result<Snapshot> {
         let mut registry = self
             .registry
             .try_lock()
@@ -101,7 +110,7 @@ impl Inspector {
         registry.clear();
         let hwnd = hwnd.unwrap_or_else(native::foreground);
         let Response::Snapshot(snapshot) =
-            self.call(Request::Inspect { hwnd }, Duration::from_secs(5))?
+            self.call_checked(Request::Inspect { hwnd }, Duration::from_secs(5), authorize)?
         else {
             return Err("invalid UIA response".into());
         };
@@ -113,6 +122,13 @@ impl Inspector {
         Ok(snapshot)
     }
     pub fn resolve(&self, id: &str) -> Result<Element> {
+        self.resolve_checked(id, || Ok(()))
+    }
+    pub(crate) fn resolve_checked(
+        &self,
+        id: &str,
+        authorize: impl Fn() -> Result<()>,
+    ) -> Result<Element> {
         let registry = self
             .registry
             .try_lock()
@@ -123,23 +139,60 @@ impl Inspector {
         if created.elapsed() > Duration::from_secs(15) {
             return Err("element lease expired; inspect again".into());
         }
-        let Response::Element(element) = self.call(
+        let Response::Element(element) = self.call_checked(
             Request::Resolve {
                 identity: identity.clone(),
             },
             Duration::from_secs(3),
+            authorize,
         )?
         else {
             return Err("invalid UIA response".into());
         };
         Ok(element)
     }
-    fn call(&self, request: Request, timeout: Duration) -> Result<Response> {
+    pub(crate) fn invoke(&self, id: &str, authorize: impl Fn() -> Result<()>) -> Result<String> {
+        let identity = {
+            let mut registry = self
+                .registry
+                .try_lock()
+                .map_err(|_| "UIA inspection busy")?;
+            let (identity, created) = registry
+                .remove(id)
+                .ok_or("unknown, consumed or superseded element; inspect again")?;
+            if created.elapsed() > Duration::from_secs(15) {
+                return Err("element lease expired; inspect again".into());
+            }
+            identity
+        };
+        let Response::Invoked { backend, .. } = self.call_checked(
+            Request::Invoke { identity },
+            Duration::from_secs(3),
+            authorize,
+        )?
+        else {
+            return Err("invalid UIA invocation response".into());
+        };
+        Ok(backend)
+    }
+    fn call_checked(
+        &self,
+        request: Request,
+        timeout: Duration,
+        authorize: impl Fn() -> Result<()>,
+    ) -> Result<Response> {
+        authorize()?;
+        let action = matches!(request, Request::Invoke { .. });
         let epoch = self.cancel.load(Ordering::SeqCst);
         let mut output = tempfile::tempfile().map_err(|e| e.to_string())?;
         let mut child = Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
             .arg("--uia-worker")
             .arg(serde_json::to_string(&request).map_err(|e| e.to_string())?)
+            .args(if action {
+                vec!["--enable-actions"]
+            } else {
+                vec![]
+            })
             .stdin(Stdio::null())
             .stdout(output.try_clone().map_err(|e| e.to_string())?)
             .stderr(Stdio::null())
@@ -156,9 +209,14 @@ impl Inspector {
         };
         let start = Instant::now();
         loop {
-            if epoch != self.cancel.load(Ordering::SeqCst) || start.elapsed() > timeout {
+            let authorization = authorize();
+            if authorization.is_err()
+                || epoch != self.cancel.load(Ordering::SeqCst)
+                || start.elapsed() > timeout
+            {
                 let _ = child.kill();
                 let _ = child.wait();
+                authorization?;
                 return Err(if epoch != self.cancel.load(Ordering::SeqCst) {
                     "UIA inspection cancelled"
                 } else {
@@ -430,6 +488,56 @@ fn read_element(
     }
 }
 pub fn execute(request: Request) -> Result<Response> {
+    execute_with_permission(request, false)
+}
+fn invoke_pushbutton(element: &IUIAutomationElement, identity: &Identity) -> Result<bool> {
+    unsafe {
+        let Ok(hwnd) = element.CurrentNativeWindowHandle() else {
+            return Ok(false);
+        };
+        if hwnd.0.is_null() {
+            return Ok(false);
+        }
+        let mut class = [0u16; 64];
+        let count = GetClassNameW(hwnd, &mut class);
+        let style = GetWindowLongW(hwnd, GWL_STYLE) & BS_TYPEMASK;
+        if String::from_utf16_lossy(&class[..count.max(0) as usize]) != "Button"
+            || !matches!(style, BS_PUSHBUTTON | BS_DEFPUSHBUTTON)
+        {
+            return Ok(false);
+        }
+        let parent = GetParent(hwnd).map_err(|e| e.to_string())?;
+        if native::window_pid(hwnd.0 as isize) != identity.pid
+            || native::window_pid(parent.0 as isize) != identity.pid
+            || GetAncestor(hwnd, GA_ROOT).0 as isize != identity.hwnd
+            || !IsWindowEnabled(hwnd).as_bool()
+        {
+            return Err("Win32 pushbutton identity changed".into());
+        }
+        let id = GetDlgCtrlID(hwnd);
+        if !(1..=u16::MAX as i32).contains(&id) {
+            return Err("invalid button control identifier".into());
+        }
+        // UIA's legacy proxy focuses the app; a pushbutton notification avoids pointer/focus side effects.
+        let result = SendMessageTimeoutW(
+            parent,
+            WM_COMMAND,
+            WPARAM(id as usize | ((BN_CLICKED as usize) << 16)),
+            LPARAM(hwnd.0 as isize),
+            SMTO_ABORTIFHUNG | SMTO_BLOCK | SMTO_ERRORONEXIT,
+            500,
+            None,
+        );
+        if result.0 == 0 {
+            return Err("button notification failed or timed out; effect may be unknown".into());
+        }
+        Ok(true)
+    }
+}
+pub(crate) fn execute_with_permission(request: Request, allow_actions: bool) -> Result<Response> {
+    if matches!(request, Request::Invoke { .. }) && !allow_actions {
+        return Err("UIA invocation requires --enable-actions".into());
+    }
     native::dpi_aware();
     native::interactive_desktop()?;
     let _apartment = Apartment::new()?;
@@ -439,7 +547,7 @@ pub fn execute(request: Request) -> Result<Response> {
                 .map_err(|e| format!("UIA unavailable: {e}"))?;
         let hwnd = match &request {
             Request::Inspect { hwnd } => *hwnd,
-            Request::Resolve { identity } => identity.hwnd,
+            Request::Resolve { identity } | Request::Invoke { identity } => identity.hwnd,
         };
         if hwnd == 0 {
             return Err("no target window".into());
@@ -461,7 +569,7 @@ pub fn execute(request: Request) -> Result<Response> {
             automation_id: String::new(),
             control_type: 0,
         };
-        if let Request::Resolve { identity } = &request
+        if let Request::Resolve { identity } | Request::Invoke { identity } = &request
             && (identity.pid != pid
                 || identity.process_started != base.process_started
                 || identity.root_runtime_id != base.root_runtime_id
@@ -490,7 +598,7 @@ pub fn execute(request: Request) -> Result<Response> {
                 break;
             }
             visited += 1;
-            if let Request::Resolve { identity } = &request {
+            if let Request::Resolve { identity } | Request::Invoke { identity } = &request {
                 if runtime_id(&element).is_ok_and(|id| id == identity.runtime_id) {
                     let mut current = read_element(&automation, &element, &base, &displays)?;
                     if current.automation_id != identity.automation_id
@@ -499,6 +607,29 @@ pub fn execute(request: Request) -> Result<Response> {
                         return Err("stale element identity".into());
                     }
                     current.id = "resolved".into();
+                    if matches!(request, Request::Invoke { .. }) {
+                        if !current.enabled || current.offscreen || !current.supports_invoke {
+                            return Err("control does not support background Invoke; physical input fallback is disabled".into());
+                        }
+                        native::interactive_desktop()?;
+                        let backend = if current.control_type == 50000
+                            && invoke_pushbutton(&element, identity)?
+                        {
+                            "win32_pushbutton_notification"
+                        } else {
+                            element
+                                .GetCurrentPatternAs::<IUIAutomationInvokePattern>(
+                                    UIA_InvokePatternId,
+                                )
+                                .and_then(|pattern| pattern.Invoke())
+                                .map_err(|e| format!("UIA Invoke failed: {e}"))?;
+                            "uia_invoke"
+                        };
+                        return Ok(Response::Invoked {
+                            element: current,
+                            backend: backend.into(),
+                        });
+                    }
                     return Ok(Response::Element(current));
                 }
             } else {
@@ -529,7 +660,7 @@ pub fn execute(request: Request) -> Result<Response> {
                 }
             }
         }
-        if matches!(request, Request::Resolve { .. }) {
+        if matches!(request, Request::Resolve { .. } | Request::Invoke { .. }) {
             return Err("element is stale or outside bounded tree; inspect again".into());
         }
         Ok(Response::Snapshot(Snapshot {

@@ -1,3 +1,4 @@
+pub mod assist;
 pub mod control;
 pub mod diagnostics;
 pub mod engine;
@@ -14,7 +15,12 @@ pub fn helper_entry() -> bool {
             .nth(2)
             .ok_or_else(|| "missing UIA request".to_owned())
             .and_then(|s| serde_json::from_str::<uia::Request>(&s).map_err(|e| e.to_string()))
-            .and_then(uia::execute);
+            .and_then(|request| {
+                uia::execute_with_permission(
+                    request,
+                    std::env::args().any(|a| a == "--enable-actions"),
+                )
+            });
         println!("{}", serde_json::to_string(&result).unwrap());
         return true;
     }

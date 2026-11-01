@@ -7,7 +7,8 @@
     "assets": "bun scripts/assets.ts",
     "build:worker": "bun scripts/build.ts",
     "check": "tsc --noEmit",
-    "test": "bun test src scripts",
+    "test": "bun test src scripts agent",
+    "agent": "bun agent/cli.ts",
     "native:test": "cargo test --locked --manifest-path src-tauri/Cargo.toml",
     "native:build": "cargo build --locked --manifest-path src-tauri/Cargo.toml --bins",
     "build": "bun run build:worker && bun run native:build",
@@ -15,6 +16,8 @@
     "diagnose": "cargo run --manifest-path src-tauri/Cargo.toml --bin kaji-diag --"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
     "@mediapipe/tasks-vision": "1.2.0",
     "@tauri-apps/api": "2.12.4"
   },

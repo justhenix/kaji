@@ -1,6 +1,8 @@
 # Kaji engine
 
-Windows-first interaction engine with a hidden Tauri v2 sensor host and developer diagnostics. Rust owns input, calibration, cursor motion, dwell, manual takeover and emergency stop. No product GUI or AI runtime is included.
+Windows-first interaction engine with a hidden Tauri v2 sensor host and developer diagnostics. Rust owns input, calibration, cursor motion, dwell, manual takeover and emergency stop. No product GUI is included.
+
+A separate [collaborative Pi harness](docs/COLLABORATIVE-HARNESS.md) is available for developer use. It keeps an independent logical cursor and requests Rust-authorized semantic actions without driving the Windows cursor. The head-control session retains its stricter manual-takeover behavior.
 
 From the repository root, on Windows with Rust/MSVC, Windows SDK, WebView2 and Bun 1.4.2 installed:
 

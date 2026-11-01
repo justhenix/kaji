@@ -1,5 +1,7 @@
 # Kaji P0
 
+The optional developer [Pi harness](COLLABORATIVE-HARNESS.md) adds a separate target-scoped execution session and logical intent cursor. The head-control architecture below remains unchanged; background semantic actions do not bypass its input authorization or manual-takeover policy.
+
 The Tauri v2 host has no product window. On explicit `--camera` launch, it creates a hidden, bundled sensor webview. Camera access is allowed only for that navigation-locked view; microphone and other permissions are denied. Windows camera privacy policy still applies. The Face Landmarker model and WASM are bundled, so runtime inference has no network dependency.
 
 `src/vision.worker.ts` runs MediaPipe off the webview thread with its default 0.5 confidence thresholds and up to two faces. The capture loop permits one inference and one IPC submission at a time, and uses decoded-frame counts to avoid refreshing the watchdog with repeated video frames. The first actual inference warms the detector before native authorization; that observation is discarded. The worker echoes the webview's capture timestamp, which is translated once to native monotonic time. Later observations retain their original capture times. Images are never logged. The Rust `Frame` boundary accepts normalized pose candidates with eye center/span, raw face count, capture time, session and sequence, not cursor deltas or clicks.

@@ -16,6 +16,10 @@ path = "src/main.rs"
 name = "kaji-diag"
 path = "src/bin/diag.rs"
 
+[[bin]]
+name = "kaji-assist"
+path = "src/bin/assist.rs"
+
 [build-dependencies]
 tauri-build = { version = "=2.7.4", features = [] }
 
