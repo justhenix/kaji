@@ -50,7 +50,38 @@ pub struct Element {
     pub enabled: bool,
     pub offscreen: bool,
     pub supports_invoke: bool,
+    pub supports_set_value: bool,
+    pub supports_toggle: bool,
+    pub supports_select: bool,
+    pub supports_scroll: bool,
+    pub toggle_state: Option<String>,
+    pub selected: Option<bool>,
+    pub horizontal_scroll_percent: Option<f64>,
+    pub vertical_scroll_percent: Option<f64>,
     pub identity: Option<Identity>,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ElementState {
+    pub name: String,
+    pub value: Option<String>,
+    pub rect: Option<Rect>,
+    pub toggle_state: Option<String>,
+    pub selected: Option<bool>,
+    pub horizontal_scroll_percent: Option<f64>,
+    pub vertical_scroll_percent: Option<f64>,
+}
+impl Element {
+    pub fn state(&self) -> ElementState {
+        ElementState {
+            name: self.name.clone(),
+            value: self.value.clone(),
+            rect: self.rect,
+            toggle_state: self.toggle_state.clone(),
+            selected: self.selected,
+            horizontal_scroll_percent: self.horizontal_scroll_percent,
+            vertical_scroll_percent: self.vertical_scroll_percent,
+        }
+    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Snapshot {
@@ -67,16 +98,123 @@ pub struct Snapshot {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Request {
-    Inspect { hwnd: isize },
-    Resolve { identity: Identity },
-    Invoke { identity: Identity },
+    Inspect {
+        hwnd: isize,
+    },
+    Resolve {
+        identity: Identity,
+    },
+    Act {
+        identity: Identity,
+        action: Action,
+        expected: Option<ElementState>,
+    },
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Action {
+    Invoke {},
+    SetValue {
+        value: String,
+    },
+    SetToggle {
+        on: bool,
+    },
+    Select {},
+    Scroll {
+        horizontal: Option<f64>,
+        vertical: Option<f64>,
+    },
+}
+impl Action {
+    pub fn validate(&self) -> Result<()> {
+        match self {
+            Self::SetValue { value } if value.chars().count() > 4096 || value.contains('\0') => {
+                Err("value must contain at most 4096 characters and no NUL".into())
+            }
+            Self::Scroll {
+                horizontal,
+                vertical,
+            } if horizontal.is_none() && vertical.is_none()
+                || horizontal
+                    .iter()
+                    .chain(vertical)
+                    .any(|v| !v.is_finite() || !(0.0..=100.0).contains(v)) =>
+            {
+                Err("scroll requires an axis percentage in 0–100".into())
+            }
+            _ => Ok(()),
+        }
+    }
+}
+#[cfg(test)]
+mod action_tests {
+    use super::*;
+    #[test]
+    fn values_and_scroll_are_bounded_before_dispatch() {
+        assert!(
+            Action::SetValue {
+                value: "a".repeat(4096)
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            Action::SetValue {
+                value: "a".repeat(4097)
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            Action::SetValue {
+                value: "a\0b".into()
+            }
+            .validate()
+            .is_err()
+        );
+        for horizontal in [
+            None,
+            Some(-1.0),
+            Some(101.0),
+            Some(f64::NAN),
+            Some(f64::INFINITY),
+        ] {
+            assert!(
+                Action::Scroll {
+                    horizontal,
+                    vertical: None
+                }
+                .validate()
+                .is_err()
+            );
+        }
+        assert!(
+            Action::Scroll {
+                horizontal: None,
+                vertical: Some(50.0)
+            }
+            .validate()
+            .is_ok()
+        );
+    }
+    #[test]
+    fn model_cannot_add_execution_or_authorization_fields_to_an_action() {
+        for value in [
+            r#"{"kind":"invoke","command":"confirm"}"#,
+            r#"{"kind":"set_value","value":"text","mode":"agent"}"#,
+            r#"{"kind":"shell","value":"cmd"}"#,
+        ] {
+            assert!(serde_json::from_str::<Action>(value).is_err());
+        }
+    }
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Response {
     Snapshot(Snapshot),
     Element(Element),
-    Invoked { element: Element, backend: String },
+    Acted { element: Element, backend: String },
 }
 
 pub struct Inspector {
@@ -151,7 +289,14 @@ impl Inspector {
         };
         Ok(element)
     }
-    pub(crate) fn invoke(&self, id: &str, authorize: impl Fn() -> Result<()>) -> Result<String> {
+    pub(crate) fn act(
+        &self,
+        id: &str,
+        action: Action,
+        expected: Option<ElementState>,
+        authorize: impl Fn() -> Result<()>,
+    ) -> Result<String> {
+        action.validate()?;
         let identity = {
             let mut registry = self
                 .registry
@@ -165,8 +310,12 @@ impl Inspector {
             }
             identity
         };
-        let Response::Invoked { backend, .. } = self.call_checked(
-            Request::Invoke { identity },
+        let Response::Acted { backend, .. } = self.call_checked(
+            Request::Act {
+                identity,
+                action,
+                expected,
+            },
             Duration::from_secs(3),
             authorize,
         )?
@@ -182,7 +331,7 @@ impl Inspector {
         authorize: impl Fn() -> Result<()>,
     ) -> Result<Response> {
         authorize()?;
-        let action = matches!(request, Request::Invoke { .. });
+        let action = matches!(request, Request::Act { .. });
         let epoch = self.cancel.load(Ordering::SeqCst);
         let mut output = tempfile::tempfile().map_err(|e| e.to_string())?;
         let mut child = Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
@@ -483,6 +632,71 @@ fn read_element(
                 && element
                     .GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId)
                     .is_ok(),
+            supports_set_value: !password
+                && element
+                    .GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
+                    .is_ok_and(|p| p.CurrentIsReadOnly().is_ok_and(|b| !b.as_bool())),
+            supports_toggle: !password
+                && element
+                    .GetCurrentPatternAs::<IUIAutomationTogglePattern>(UIA_TogglePatternId)
+                    .is_ok(),
+            supports_select: !password
+                && element
+                    .GetCurrentPatternAs::<IUIAutomationSelectionItemPattern>(
+                        UIA_SelectionItemPatternId,
+                    )
+                    .is_ok(),
+            supports_scroll: !password
+                && element
+                    .GetCurrentPatternAs::<IUIAutomationScrollPattern>(UIA_ScrollPatternId)
+                    .is_ok(),
+            toggle_state: if password {
+                None
+            } else {
+                element
+                    .GetCurrentPatternAs::<IUIAutomationTogglePattern>(UIA_TogglePatternId)
+                    .and_then(|p| p.CurrentToggleState())
+                    .ok()
+                    .map(|state| {
+                        if state == ToggleState_On {
+                            "on"
+                        } else if state == ToggleState_Off {
+                            "off"
+                        } else {
+                            "indeterminate"
+                        }
+                        .into()
+                    })
+            },
+            selected: if password {
+                None
+            } else {
+                element
+                    .GetCurrentPatternAs::<IUIAutomationSelectionItemPattern>(
+                        UIA_SelectionItemPatternId,
+                    )
+                    .and_then(|p| p.CurrentIsSelected())
+                    .ok()
+                    .map(|b| b.as_bool())
+            },
+            horizontal_scroll_percent: if password {
+                None
+            } else {
+                element
+                    .GetCurrentPatternAs::<IUIAutomationScrollPattern>(UIA_ScrollPatternId)
+                    .and_then(|p| p.CurrentHorizontalScrollPercent())
+                    .ok()
+                    .filter(|v| v.is_finite() && *v >= 0.0)
+            },
+            vertical_scroll_percent: if password {
+                None
+            } else {
+                element
+                    .GetCurrentPatternAs::<IUIAutomationScrollPattern>(UIA_ScrollPatternId)
+                    .and_then(|p| p.CurrentVerticalScrollPercent())
+                    .ok()
+                    .filter(|v| v.is_finite() && *v >= 0.0)
+            },
             identity,
         })
     }
@@ -534,8 +748,68 @@ fn invoke_pushbutton(element: &IUIAutomationElement, identity: &Identity) -> Res
         Ok(true)
     }
 }
+fn apply_action(
+    element: &IUIAutomationElement,
+    identity: &Identity,
+    current: &Element,
+    action: &Action,
+) -> Result<&'static str> {
+    action.validate()?;
+    if !current.enabled || current.offscreen {
+        return Err("control is disabled or offscreen".into());
+    }
+    native::interactive_desktop()?;
+    unsafe {
+        if element
+            .CurrentIsPassword()
+            .map_err(|e| e.to_string())?
+            .as_bool()
+        {
+            return Err("password controls are not available to automation".into());
+        }
+        match action {
+            Action::Invoke {} if current.supports_invoke => {
+                if current.control_type == 50000 && invoke_pushbutton(element, identity)? {
+                    return Ok("win32_pushbutton_notification");
+                }
+                element.GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId)
+                    .and_then(|p| p.Invoke()).map_err(|e| format!("UIA Invoke failed: {e}"))?;
+                Ok("uia_invoke")
+            }
+            Action::SetValue { value } if current.supports_set_value => {
+                let pattern = element.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId).map_err(|e| e.to_string())?;
+                if pattern.CurrentIsReadOnly().map_err(|e| e.to_string())?.as_bool() { return Err("value is read-only".into()); }
+                pattern.SetValue(&windows::core::BSTR::from(value.as_str())).map_err(|e| format!("UIA SetValue failed: {e}"))?;
+                Ok("uia_set_value")
+            }
+            Action::SetToggle { on } if current.supports_toggle => {
+                let pattern = element.GetCurrentPatternAs::<IUIAutomationTogglePattern>(UIA_TogglePatternId).map_err(|e| e.to_string())?;
+                let desired = if *on { ToggleState_On } else { ToggleState_Off };
+                if pattern.CurrentToggleState().map_err(|e| e.to_string())? != desired {
+                    pattern.Toggle().map_err(|e| format!("UIA Toggle failed: {e}"))?;
+                }
+                if pattern.CurrentToggleState().map_err(|e| e.to_string())? != desired { return Err("toggle did not reach requested state; inspect before retrying".into()); }
+                Ok("uia_set_toggle")
+            }
+            Action::Select {} if current.supports_select => {
+                element.GetCurrentPatternAs::<IUIAutomationSelectionItemPattern>(UIA_SelectionItemPatternId)
+                    .and_then(|p| p.Select()).map_err(|e| format!("UIA Select failed: {e}"))?;
+                Ok("uia_select")
+            }
+            Action::Scroll { horizontal, vertical } if current.supports_scroll => {
+                let pattern = element.GetCurrentPatternAs::<IUIAutomationScrollPattern>(UIA_ScrollPatternId).map_err(|e| e.to_string())?;
+                if horizontal.is_some() && !pattern.CurrentHorizontallyScrollable().map_err(|e| e.to_string())?.as_bool()
+                    || vertical.is_some() && !pattern.CurrentVerticallyScrollable().map_err(|e| e.to_string())?.as_bool() { return Err("requested scroll axis is not supported".into()); }
+                pattern.SetScrollPercent(horizontal.unwrap_or(-1.0), vertical.unwrap_or(-1.0)).map_err(|e| format!("UIA Scroll failed: {e}"))?;
+                Ok("uia_scroll_percent")
+            }
+            _ => Err("control does not support this semantic action; physical input fallback is disabled".into()),
+        }
+    }
+}
+
 pub(crate) fn execute_with_permission(request: Request, allow_actions: bool) -> Result<Response> {
-    if matches!(request, Request::Invoke { .. }) && !allow_actions {
+    if matches!(request, Request::Act { .. }) && !allow_actions {
         return Err("UIA invocation requires --enable-actions".into());
     }
     native::dpi_aware();
@@ -547,7 +821,7 @@ pub(crate) fn execute_with_permission(request: Request, allow_actions: bool) -> 
                 .map_err(|e| format!("UIA unavailable: {e}"))?;
         let hwnd = match &request {
             Request::Inspect { hwnd } => *hwnd,
-            Request::Resolve { identity } | Request::Invoke { identity } => identity.hwnd,
+            Request::Resolve { identity } | Request::Act { identity, .. } => identity.hwnd,
         };
         if hwnd == 0 {
             return Err("no target window".into());
@@ -569,7 +843,7 @@ pub(crate) fn execute_with_permission(request: Request, allow_actions: bool) -> 
             automation_id: String::new(),
             control_type: 0,
         };
-        if let Request::Resolve { identity } | Request::Invoke { identity } = &request
+        if let Request::Resolve { identity } | Request::Act { identity, .. } = &request
             && (identity.pid != pid
                 || identity.process_started != base.process_started
                 || identity.root_runtime_id != base.root_runtime_id
@@ -598,7 +872,7 @@ pub(crate) fn execute_with_permission(request: Request, allow_actions: bool) -> 
                 break;
             }
             visited += 1;
-            if let Request::Resolve { identity } | Request::Invoke { identity } = &request {
+            if let Request::Resolve { identity } | Request::Act { identity, .. } = &request {
                 if runtime_id(&element).is_ok_and(|id| id == identity.runtime_id) {
                     let mut current = read_element(&automation, &element, &base, &displays)?;
                     if current.automation_id != identity.automation_id
@@ -607,25 +881,18 @@ pub(crate) fn execute_with_permission(request: Request, allow_actions: bool) -> 
                         return Err("stale element identity".into());
                     }
                     current.id = "resolved".into();
-                    if matches!(request, Request::Invoke { .. }) {
-                        if !current.enabled || current.offscreen || !current.supports_invoke {
-                            return Err("control does not support background Invoke; physical input fallback is disabled".into());
-                        }
-                        native::interactive_desktop()?;
-                        let backend = if current.control_type == 50000
-                            && invoke_pushbutton(&element, identity)?
+                    if let Request::Act {
+                        action, expected, ..
+                    } = &request
+                    {
+                        if expected
+                            .as_ref()
+                            .is_some_and(|expected| *expected != current.state())
                         {
-                            "win32_pushbutton_notification"
-                        } else {
-                            element
-                                .GetCurrentPatternAs::<IUIAutomationInvokePattern>(
-                                    UIA_InvokePatternId,
-                                )
-                                .and_then(|pattern| pattern.Invoke())
-                                .map_err(|e| format!("UIA Invoke failed: {e}"))?;
-                            "uia_invoke"
-                        };
-                        return Ok(Response::Invoked {
+                            return Err("approved target changed; inspect and confirm again".into());
+                        }
+                        let backend = apply_action(&element, identity, &current, action)?;
+                        return Ok(Response::Acted {
                             element: current,
                             backend: backend.into(),
                         });
@@ -660,7 +927,7 @@ pub(crate) fn execute_with_permission(request: Request, allow_actions: bool) -> 
                 }
             }
         }
-        if matches!(request, Request::Resolve { .. } | Request::Invoke { .. }) {
+        if matches!(request, Request::Resolve { .. } | Request::Act { .. }) {
             return Err("element is stale or outside bounded tree; inspect again".into());
         }
         Ok(Response::Snapshot(Snapshot {

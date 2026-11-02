@@ -4,6 +4,8 @@ Windows-first interaction engine with a hidden Tauri v2 sensor host and develope
 
 A separate [collaborative Pi harness](docs/COLLABORATIVE-HARNESS.md) is available for developer use. It keeps an independent logical cursor and requests Rust-authorized semantic actions without driving the Windows cursor. The head-control session retains its stricter manual-takeover behavior.
 
+[Guide/Assist workflows](docs/GUIDE-ASSIST.md) now support native confirmation and broader semantic actions. The [Cloudflare gateway](../gateway/README.md) keeps upstream model credentials outside the desktop application. See the [current checkpoint](docs/UNATTENDED-CHECKPOINT.md) for executed verification and remaining limits.
+
 From the repository root, on Windows with Rust/MSVC, Windows SDK, WebView2 and Bun 1.4.2 installed:
 
 ```powershell

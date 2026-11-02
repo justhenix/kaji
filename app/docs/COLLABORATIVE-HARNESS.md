@@ -1,5 +1,7 @@
 # Collaborative computer-use harness
 
+This records the original harness checkpoint. The current implementation adds a fifth semantic-action tool, default Assist confirmation, Guide/Assist workflow logic and a deployed model gateway. See [Guide/Assist execution](GUIDE-ASSIST.md) and [current verification](UNATTENDED-CHECKPOINT.md); the results below are historical evidence.
+
 The developer harness uses Pi Agent Core 1.4.0 with four sequential tools and one authorized Windows window. Its independent intent cursor stores an element token, physical screen point and revision in Rust. Pointing never moves the Windows cursor. This is an execution API, with no cursor overlay or product GUI.
 
 `agent/harness.ts` owns the Pi transcript, turn/tool/time budgets, steering and explicit pause/resume. `agent/native-session.ts` communicates with `kaji-assist` over inherited JSONL stdin/stdout. There is no server, shell tool, hotkey tool, screenshot uploader, browser session or camera capture. No Aksesa source was copied. The existing head-control engine keeps its original manual-takeover policy.

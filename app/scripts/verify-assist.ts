@@ -31,7 +31,7 @@ try {
   catch (error) { if (!String(error).includes("--enable-actions")) throw error; record("default actions denied", String(error)); }
   await native.close(); native = undefined;
 
-  native = await NativeSession.open(hwnd, true);
+  native = await NativeSession.open(hwnd, true, undefined, "agent");
   const before = await native.status();
   let beforeValue = "", afterValue = "";
   const model = groqProvider().getModels()[0]!;

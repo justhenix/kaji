@@ -9,6 +9,7 @@
     "check": "tsc --noEmit",
     "test": "bun test src scripts agent",
     "agent": "bun agent/cli.ts",
+    "workflow": "bun agent/workflow-cli.ts",
     "native:test": "cargo test --locked --manifest-path src-tauri/Cargo.toml",
     "native:build": "cargo build --locked --manifest-path src-tauri/Cargo.toml --bins",
     "build": "bun run build:worker && bun run native:build",

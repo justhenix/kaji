@@ -2,7 +2,7 @@ use crate::{
     Result,
     control::Point,
     native::{self, Hooks, InputLease, Rect, Signals},
-    uia::{Inspector, Snapshot},
+    uia::{Action, ElementState, Inspector, Snapshot},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -21,6 +21,27 @@ pub struct IntentCursor {
     pub element_id: String,
     pub point: Point,
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    Guide,
+    #[default]
+    Assist,
+    Agent,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct Confirmation {
+    pub id: String,
+    pub revision: u64,
+    pub element_id: String,
+    pub target_name: String,
+    pub action: Action,
+}
+struct Pending {
+    confirmation: Confirmation,
+    expected: ElementState,
+    created: Instant,
+}
 #[derive(Clone, Debug, Serialize)]
 pub struct Status {
     pub session: u64,
@@ -35,6 +56,8 @@ pub struct Status {
     pub verification_pending: bool,
     pub last_outcome: Option<String>,
     pub last_backend: Option<String>,
+    pub mode: Mode,
+    pub confirmation: Option<Confirmation>,
 }
 struct State {
     status: Status,
@@ -44,6 +67,7 @@ struct State {
     activity: u64,
     pulse: u64,
     pulse_at: Instant,
+    pending: Option<Pending>,
 }
 impl Default for State {
     fn default() -> Self {
@@ -61,6 +85,8 @@ impl Default for State {
                 verification_pending: false,
                 last_outcome: None,
                 last_backend: None,
+                mode: Mode::default(),
+                confirmation: None,
             },
             pid: 0,
             monitors: vec![],
@@ -68,10 +94,15 @@ impl Default for State {
             activity: 0,
             pulse: 0,
             pulse_at: Instant::now(),
+            pending: None,
         }
     }
 }
 impl State {
+    fn clear_confirmation(&mut self) {
+        self.pending = None;
+        self.status.confirmation = None;
+    }
     fn revoke(&mut self, reason: &str) {
         if self.status.phase != "stopped" || self.status.session == 0 {
             self.status.reason = reason.into();
@@ -79,15 +110,27 @@ impl State {
         self.status.session = self.status.session.wrapping_add(1);
         self.status.phase = "stopped".into();
         self.status.cursor = None;
+        self.clear_confirmation();
         self.status.inspection_required = true;
     }
     fn pause(&mut self, reason: &str) {
         self.status.phase = "paused".into();
         self.status.reason = reason.into();
         self.status.cursor = None;
+        self.clear_confirmation();
         self.status.inspection_required = true;
     }
     fn observe_input(&mut self, signals: &Signals, now: Instant) {
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|p| now.duration_since(p.created) > Duration::from_secs(15))
+        {
+            self.clear_confirmation();
+            self.status.cursor = None;
+            self.status.inspection_required = true;
+            self.status.reason = "confirmation expired; inspect again".into();
+        }
         if !matches!(
             self.status.phase.as_str(),
             "initializing" | "active" | "paused"
@@ -107,7 +150,13 @@ impl State {
             self.revoke("native observer unavailable or heartbeat expired");
         } else if signals.target_activity.load(Ordering::SeqCst) != self.activity {
             self.activity = signals.target_activity.load(Ordering::SeqCst);
-            self.pause("user is interacting with the shared target; explicit resume and inspection required");
+            if self.status.mode == Mode::Guide {
+                self.status.cursor = None;
+                self.status.inspection_required = true;
+                self.status.reason = "user action observed; inspect the expected effect".into();
+            } else {
+                self.pause("user is interacting with the shared target; explicit resume and inspection required");
+            }
         }
     }
 }
@@ -142,9 +191,9 @@ impl Assist {
         })
     }
     pub fn begin(&self, hwnd: isize) -> Result<Status> {
-        self.begin_at(hwnd, self.status()?.session)
+        self.begin_at(hwnd, self.status()?.session, Mode::default())
     }
-    fn begin_at(&self, hwnd: isize, expected: u64) -> Result<Status> {
+    fn begin_at(&self, hwnd: isize, expected: u64, mode: Mode) -> Result<Status> {
         let _serial = self.serial.lock().map_err(|_| "assist executor poisoned")?;
         native::interactive_desktop()?;
         self.inspector.cancel();
@@ -156,6 +205,7 @@ impl Assist {
             let session = s.status.session.wrapping_add(1);
             *s = State::default();
             s.status.session = session;
+            s.status.mode = mode;
             s.status.phase = "initializing".into();
             self.signals.shared_target.store(0, Ordering::SeqCst);
             s.activity = self.signals.target_activity.load(Ordering::SeqCst);
@@ -230,6 +280,7 @@ impl Assist {
             return Err("inspection cancelled".into());
         }
         s.status.cursor = None;
+        s.clear_confirmation();
         s.status.inspection_required = false;
         s.status.verification_pending = false;
         Ok(snapshot)
@@ -262,6 +313,7 @@ impl Assist {
             return Err("point cancelled".into());
         }
         s.revision += 1;
+        s.clear_confirmation();
         let cursor = IntentCursor {
             revision: s.revision,
             element_id: element_id.into(),
@@ -271,11 +323,21 @@ impl Assist {
         Ok(cursor)
     }
     pub fn invoke(&self, session: u64, revision: u64) -> Result<Status> {
+        self.act(session, revision, Action::Invoke {})
+    }
+    pub fn act(&self, session: u64, revision: u64, action: Action) -> Result<Status> {
         if !self.permission {
             return Err("native actions require --enable-actions".into());
         }
+        action.validate()?;
         let _serial = self.serial.lock().map_err(|_| "assist executor poisoned")?;
         let status = self.authorize(session, false)?;
+        if status.mode == Mode::Guide {
+            return Err("Guide mode cannot execute actions".into());
+        }
+        if status.confirmation.is_some() {
+            return Err("an action already awaits explicit host confirmation".into());
+        }
         if status.inspection_required {
             return Err("fresh inspection required".into());
         }
@@ -283,6 +345,74 @@ impl Assist {
             .cursor
             .filter(|c| c.revision == revision)
             .ok_or("intent cursor is missing or superseded")?;
+        if status.mode == Mode::Assist {
+            let element = self.inspector.resolve_checked(&cursor.element_id, || {
+                self.authorize(session, false).map(|_| ())
+            })?;
+            self.authorize(session, false)?;
+            let id = format!(
+                "{:?}",
+                unsafe { windows::Win32::System::Com::CoCreateGuid() }.map_err(|e| e.to_string())?
+            );
+            let confirmation = Confirmation {
+                id,
+                revision,
+                element_id: cursor.element_id,
+                target_name: element.name.clone(),
+                action,
+            };
+            let mut s = self.state.lock().map_err(|_| "assist state poisoned")?;
+            if s.status.session != session || s.status.phase != "active" {
+                return Err("proposal cancelled".into());
+            }
+            s.pending = Some(Pending {
+                confirmation: confirmation.clone(),
+                expected: element.state(),
+                created: Instant::now(),
+            });
+            s.status.confirmation = Some(confirmation);
+            s.status.reason =
+                "exact action awaits explicit host confirmation; no effect dispatched".into();
+            return Ok(s.status.clone());
+        }
+        self.execute_action(session, &cursor.element_id, action, None)
+    }
+    pub fn confirm(&self, session: u64, confirmation_id: &str) -> Result<Status> {
+        if !self.permission {
+            return Err("native actions require --enable-actions".into());
+        }
+        let _serial = self.serial.lock().map_err(|_| "assist executor poisoned")?;
+        let status = self.authorize(session, false)?;
+        if status.mode != Mode::Assist || status.inspection_required {
+            return Err("confirmation is unavailable; inspect again".into());
+        }
+        let pending = {
+            let mut s = self.state.lock().map_err(|_| "assist state poisoned")?;
+            let pending = s.pending.as_ref().ok_or("no action awaits confirmation")?;
+            if pending.confirmation.id != confirmation_id
+                || pending.created.elapsed() > Duration::from_secs(15)
+            {
+                return Err("confirmation is incorrect or expired".into());
+            }
+            let pending = s.pending.take().ok_or("confirmation consumed")?;
+            s.status.confirmation = None;
+            pending
+        };
+        self.execute_action(
+            session,
+            &pending.confirmation.element_id,
+            pending.confirmation.action,
+            Some(pending.expected),
+        )
+    }
+    fn execute_action(
+        &self,
+        session: u64,
+        element_id: &str,
+        action: Action,
+        expected: Option<ElementState>,
+    ) -> Result<Status> {
+        self.authorize(session, false)?;
         {
             let mut s = self.state.lock().map_err(|_| "assist state poisoned")?;
             if s.status.session != session || s.status.phase != "active" {
@@ -294,7 +424,7 @@ impl Assist {
             s.status.last_outcome = Some("unknown".into());
         }
         let foreground = native::foreground();
-        let result = self.inspector.invoke(&cursor.element_id, || {
+        let result = self.inspector.act(element_id, action, expected, || {
             self.authorize(session, false).map(|_| ())
         });
         let mut s = self.state.lock().map_err(|_| "assist state poisoned")?;
@@ -302,6 +432,7 @@ impl Assist {
             s.status.actions += 1;
             s.status.last_backend = Some(backend.clone());
             s.status.last_outcome = Some("requested; inspect application state to verify".into());
+            s.status.reason = "action requested; inspect application state to verify".into();
         }
         if result.is_err() && s.status.phase == "active" {
             s.pause("action outcome unknown; inspect before explicitly resuming");
@@ -309,12 +440,11 @@ impl Assist {
         if native::foreground() != foreground && s.status.phase == "active" {
             s.pause("provider changed foreground focus; inspect before resuming");
         }
-        let status = s.status.clone();
         drop(s);
         result.map_err(|e| {
             format!("{e}; action outcome may be unknown; do not retry without inspection")
         })?;
-        Ok(status)
+        self.status()
     }
     fn revoke(&self, reason: &str) -> Result<()> {
         self.state
@@ -366,13 +496,36 @@ impl Drop for Assist {
 #[derive(Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 enum Command {
-    Begin { hwnd: isize },
-    Inspect { session: u64 },
-    Point { session: u64, element_id: String },
-    Invoke { session: u64, revision: u64 },
+    Begin {
+        hwnd: isize,
+        #[serde(default)]
+        mode: Mode,
+    },
+    Inspect {
+        session: u64,
+    },
+    Point {
+        session: u64,
+        element_id: String,
+    },
+    Invoke {
+        session: u64,
+        revision: u64,
+    },
+    Act {
+        session: u64,
+        revision: u64,
+        action: Action,
+    },
+    Confirm {
+        session: u64,
+        confirmation_id: String,
+    },
     Status,
     Pause,
-    Resume { session: u64 },
+    Resume {
+        session: u64,
+    },
     Stop,
     Shutdown,
 }
@@ -455,8 +608,8 @@ pub fn serve(assist: Arc<Assist>) {
                     let busy = busy.clone();
                     scope.spawn(move || {
                         let result = match command {
-                            Command::Begin { hwnd } => {
-                                service.begin_at(hwnd, epoch).map(|s| json!(s))
+                            Command::Begin { hwnd, mode } => {
+                                service.begin_at(hwnd, epoch, mode).map(|s| json!(s))
                             }
                             Command::Inspect { session } => {
                                 service.inspect(session).map(|s| json!(s))
@@ -468,6 +621,15 @@ pub fn serve(assist: Arc<Assist>) {
                             Command::Invoke { session, revision } => {
                                 service.invoke(session, revision).map(|s| json!(s))
                             }
+                            Command::Act {
+                                session,
+                                revision,
+                                action,
+                            } => service.act(session, revision, action).map(|s| json!(s)),
+                            Command::Confirm {
+                                session,
+                                confirmation_id,
+                            } => service.confirm(session, &confirmation_id).map(|s| json!(s)),
                             Command::Resume { session } => {
                                 service.resume(session).map(|s| json!(s))
                             }
@@ -506,6 +668,56 @@ mod tests {
         let signals = Signals::default();
         signals.observer_alive.store(true, Ordering::SeqCst);
         (state, signals)
+    }
+    #[test]
+    fn guide_user_input_keeps_observation_active_but_invalidates_grounding() {
+        let (mut state, signals) = active();
+        state.status.mode = Mode::Guide;
+        signals.target_activity.store(1, Ordering::SeqCst);
+        state.observe_input(&signals, Instant::now());
+        assert_eq!(state.status.phase, "active");
+        assert_eq!(state.status.session, 7);
+        assert!(state.status.inspection_required);
+    }
+    #[test]
+    fn confirmation_expires_and_cannot_survive_pause_or_stop() {
+        for event in ["expire", "pause", "stop"] {
+            let (mut state, signals) = active();
+            let confirmation = Confirmation {
+                id: "test".into(),
+                revision: 1,
+                element_id: "e1".into(),
+                target_name: "7".into(),
+                action: Action::Invoke {},
+            };
+            let created = Instant::now();
+            state.status.confirmation = Some(confirmation.clone());
+            state.pending = Some(Pending {
+                confirmation,
+                expected: ElementState {
+                    name: "7".into(),
+                    value: None,
+                    rect: None,
+                    toggle_state: None,
+                    selected: None,
+                    horizontal_scroll_percent: None,
+                    vertical_scroll_percent: None,
+                },
+                created,
+            });
+            match event {
+                "expire" => {
+                    let now = created + Duration::from_secs(16);
+                    state.pulse_at = now;
+                    state.observe_input(&signals, now);
+                }
+                "pause" => state.pause("pause"),
+                _ => state.revoke("stop"),
+            }
+            assert!(state.pending.is_none());
+            assert!(state.status.confirmation.is_none());
+            assert!(state.status.inspection_required);
+        }
     }
     #[test]
     fn unrelated_mouse_activity_does_not_cancel_background_work() {
