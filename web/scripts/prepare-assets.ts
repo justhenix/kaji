@@ -25,7 +25,7 @@ function chunk(type: string, data: Uint8Array): Buffer {
 }
 
 const sourceTime = Math.max((await stat(fileURLToPath(import.meta.url))).mtimeMs, (await stat(new URL('../src/lib/dither.ts', import.meta.url))).mtimeMs);
-for (const [kind, width, height] of [['sweep', 960, 640], ['cursor', 400, 440]] as const) {
+for (const [kind, width, height] of [['sweep', 960, 640], ['cursor', 400, 440], ['hero-cursor', 400, 440]] as const) {
   const output = new URL(`art/${kind}.png`, publicDir);
   const previous = await stat(output).catch(() => null);
   if (previous && previous.mtimeMs >= sourceTime) continue;
