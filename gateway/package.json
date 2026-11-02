@@ -1,0 +1,13 @@
+{
+  "name": "@kaji/gateway",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "bun test",
+    "test:runtime": "node scripts/verify-runtime.mjs",
+    "dev": "node node_modules/wrangler/bin/wrangler.js dev",
+    "deploy": "node node_modules/wrangler/bin/wrangler.js deploy"
+  },
+  "devDependencies": { "wrangler": "4.156.1", "typescript": "5.9.3", "@types/bun": "^1.4.4" }
+}
