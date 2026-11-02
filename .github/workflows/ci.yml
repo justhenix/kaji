@@ -1,0 +1,47 @@
+name: Kaji checks
+on:
+  push:
+    branches: [main, 'henix/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run --cwd gateway check && bun run --cwd gateway test
+      - run: bun run --cwd gateway test:runtime
+      - run: bun run --cwd app check && bun run --cwd app test
+      - run: bun run --cwd web check && bun run --cwd web test && bun run --cwd web build
+      - run: bun run --cwd gateway deploy --dry-run
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+      - run: bun install --frozen-lockfile
+      - run: bun run --cwd app build:worker
+      - run: cargo fmt --manifest-path app/src-tauri/Cargo.toml --check
+      - run: cargo test --locked --manifest-path app/src-tauri/Cargo.toml
+      - run: cargo clippy --locked --manifest-path app/src-tauri/Cargo.toml --all-targets -- -D warnings
