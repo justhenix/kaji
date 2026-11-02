@@ -1,4 +1,4 @@
-export type Artwork = 'sweep' | 'cursor';
+export type Artwork = 'sweep' | 'cursor' | 'hero-cursor';
 export const palette = [[9, 49, 141], [253, 145, 204]] as const;
 
 const bayer = [
@@ -14,8 +14,7 @@ const bayer = [
 const clamp = (v: number) => Math.max(0, Math.min(1, v));
 const smooth = (v: number) => { const t = clamp(v); return t * t * (3 - 2 * t); };
 
-export function inCursor(x: number, y: number): boolean {
-  const points = [[0, 0], [1, .44], [.59, .59], [.39, 1]];
+function insidePolygon(x: number, y: number, points: number[][]): boolean {
   let inside = false;
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
     const [xi, yi] = points[i];
@@ -24,6 +23,14 @@ export function inCursor(x: number, y: number): boolean {
   }
   return inside;
 }
+
+export function inCursor(x: number, y: number): boolean {
+  return insidePolygon(x, y, [[0, 0], [1, .44], [.59, .59], [.39, 1]]);
+}
+
+// Mirrored shapes from logo/kaji-mark.svg, in the logo's original coordinates.
+const arrowShape = [[359.313, 116.797], [11.26, 9.425], [119.357, 361.103], [175.78, 268.255], [175.78, 174.575], [267.32, 174.575]];
+const boostShape = [[388.74, 189.575], [376.78, 198.975], [366.63, 293.645], [272.34, 198.925], [200.34, 198.925], [200.34, 271.075], [295.3, 366.325], [200.34, 376.555], [190.24, 390.575], [388.74, 390.575]];
 
 // The same ordered thresholds generate the static fallback and interactive grains.
 export function pixelAt(kind: Artwork, gx: number, gy: number, width: number, height: number): number {
@@ -38,6 +45,15 @@ export function pixelAt(kind: Artwork, gx: number, gy: number, width: number, he
   if (kind === 'cursor') {
     if (!inCursor((x - .13) / .74, (y - .07) / .86)) return 0;
     density = .98 - .12 * x;
+    pink = smooth((x + y * .48 - .4) / .65);
+  } else if (kind === 'hero-cursor') {
+    const logoX = (x * width - 30) / .86;
+    const logoY = (y * height - 45) / .86;
+    const inArrow = insidePolygon(logoX, logoY, arrowShape);
+    const boostX = 190.24 + (logoX - 190.24) / .8;
+    const boostY = 189.575 + (logoY - 189.575) / .8;
+    if (!inArrow && !insidePolygon(boostX, boostY, boostShape)) return 0;
+    density = inArrow ? .98 - .12 * x : .95 * (1 - smooth(((boostX - 190.24) / 198.5 + (boostY - 189.575) / 201 - .45) / 1.5));
     pink = smooth((x + y * .48 - .4) / .65);
   } else {
     const center = .22 + .48 * smooth(x / .95);

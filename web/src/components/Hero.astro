@@ -11,7 +11,7 @@ import Icon from './Icon.astro';
     <p>An on-screen companion that points,<br class="desktop-break" /> assists, and clicks for you.</p>
     <Actions />
   </div>
-  <div class="hero-cursor"><DitherSand kind="cursor" cursor eager client:load /></div>
+  <div class="hero-cursor"><DitherSand kind="hero-cursor" cursor eager client:load /></div>
   <a class="explore" href="#how-it-works">A new way to find your way <Icon name="down" size={17} /></a>
 </section>
 <style>
@@ -20,7 +20,7 @@ import Icon from './Icon.astro';
   h1 { margin-inline: auto; max-width: 1000px; }
   p { font-size: clamp(17px, 1.55vw, 21px); line-height: 1.55; color: var(--muted); margin: 22px auto 26px; max-width: 500px; }
   .hero-copy :global(a) { pointer-events: auto; }
-  .hero-cursor { position: relative; z-index: 1; width: 292px; margin: 32px auto 0; transform: rotate(-7deg); }
+  .hero-cursor { position: relative; z-index: 1; width: 292px; margin: 32px auto 0; }
   .explore { position: relative; margin: 13px auto 0; display: flex; width: fit-content; min-height: 44px; padding-inline: 12px; align-items: center; gap: 14px; color: var(--muted); background: white; font-size: 12px; text-decoration: none; }
   .explore:hover { color: var(--blue); }
   .explore span { color: var(--blue); font-size: 18px; }

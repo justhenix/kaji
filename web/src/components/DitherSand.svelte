@@ -125,7 +125,7 @@
 </script>
 
 <div bind:this={host} class:cursor class:mirrored class="sand" aria-hidden="true" data-dither={kind}>
-  <img bind:this={picture} src={`/art/${kind}.png`} alt="" width={kind === 'cursor' ? 400 : 960} height={kind === 'cursor' ? 440 : 640} loading={eager ? 'eager' : 'lazy'} decoding="async" class:ready />
+  <img bind:this={picture} src={`/art/${kind}.png`} alt="" width={kind === 'sweep' ? 960 : 400} height={kind === 'sweep' ? 640 : 440} loading={eager ? 'eager' : 'lazy'} decoding="async" class:ready />
   <canvas bind:this={canvas} class:ready></canvas>
 </div>
 
