@@ -41,7 +41,7 @@ async function assertInside() {
 }
 async function fitNativeFrame(panelWidth: number, scale: number) {
   const panelHeight = await page.locator('.composer-panel').evaluate((element: HTMLElement) => Math.min(element.scrollHeight + 2, 400));
-  await page.setViewportSize({ width: Math.ceil((panelWidth + 24) * scale), height: Math.ceil((92 + panelHeight) * scale) });
+  await page.setViewportSize({ width: Math.ceil((panelWidth + 24) * scale), height: Math.ceil((100 + panelHeight) * scale) });
   await assertInside();
   await expect.poll(() => page.locator('.composer-panel').evaluate((element: HTMLElement) => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
 }
@@ -54,7 +54,7 @@ try {
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   const pill = await page.locator('.composer-pill').boundingBox();
-  assert.equal(pill!.width, 400); assert.equal(pill!.height, 60);
+  assert.equal(pill!.width, 448); assert.equal(pill!.height, 68);
   for (const button of await page.locator('.composer-pill button').all()) {
     const box = (await button.boundingBox())!;
     assert.ok(box.width >= 44 && box.height >= 44, 'Control target is too small');
@@ -80,7 +80,13 @@ try {
   await expect(page.getByRole('button', { name: 'Type a request', exact: true })).toBeFocused();
   await page.getByRole('button', { name: 'Open Kaji', exact: true }).click();
   await expect(page.locator('h1')).toBeVisible();
-  await page.getByRole('button', { name: 'Composer', exact: true }).click();
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page).toHaveURL(/composer\.html$/);
+  await page.getByRole('button', { name: 'Open Kaji', exact: true }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(page).toHaveURL(/settings\.html/);
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page).toHaveURL(/composer\.html$/);
   assert.equal(context.pages().length, 1);
   await page.getByRole('button', { name: 'Type a request', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Your request', exact: true })).toHaveValue('Summarize this page');
@@ -147,7 +153,7 @@ try {
       if (size === 100) await screenshot(`editor-${placement}-light`);
       await fitNativeFrame(520, size / 100);
       await update({ question });
-      await fitNativeFrame(440, size / 100);
+      await fitNativeFrame(448, size / 100);
     }
   }
   await page.evaluate(() => { localStorage.setItem('kaji_settings', JSON.stringify({ theme: 'light', composer_position: 'floating', composer_size: 100, composer_opacity: 100 })); sessionStorage.removeItem('kaji-composer-question'); });
@@ -163,6 +169,45 @@ try {
   const motionPage = await motionContext.newPage();
   await motionPage.goto(`${origin}/composer.html`);
   const prompt = motionPage.getByRole('button', { name: 'Type a request', exact: true });
+  await motionPage.evaluate(() => document.fonts.ready);
+  async function inputGeometry(selector: string) {
+    return motionPage.locator(selector).evaluate((element: HTMLElement) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const text = element.querySelector('span');
+      const textRect = text?.getBoundingClientRect();
+      return { width: rect.width, height: rect.height, padding: style.padding, font: style.font,
+        transform: style.transform, textX: textRect ? textRect.x - rect.x : null, textWidth: textRect?.width };
+    });
+  }
+  await motionPage.mouse.move(0, 0);
+  const idleGeometry = await inputGeometry('.composer-prompt');
+  await prompt.hover();
+  for (let frame = 0; frame < 12; frame++) {
+    await motionPage.evaluate(() => new Promise(requestAnimationFrame));
+    assert.deepEqual(await inputGeometry('.composer-prompt'), idleGeometry, 'Hover changed the input geometry');
+  }
+  await motionPage.mouse.down();
+  assert.deepEqual(await inputGeometry('.composer-prompt'), idleGeometry, 'Press scaled the input text');
+  await motionPage.mouse.up();
+  await expect(motionPage.getByRole('textbox', { name: 'Your request', exact: true })).toBeFocused();
+  await motionPage.locator('.composer-panel').evaluate((element: HTMLElement) => {
+    for (const animation of element.getAnimations()) {
+      animation.pause();
+      const widths: number[] = [];
+      for (const time of [0, 50, 125, 195, 250]) {
+        animation.currentTime = time;
+        widths.push(element.querySelector('textarea')!.getBoundingClientRect().width);
+      }
+      if (new Set(widths).size !== 1) throw new Error(`Editor text scales during expansion: ${widths}`);
+      animation.finish();
+    }
+  });
+  await motionPage.mouse.move(0, 0);
+  const editorGeometry = await inputGeometry('#composer-input');
+  await motionPage.locator('#composer-input').hover();
+  assert.deepEqual(await inputGeometry('#composer-input'), editorGeometry, 'Editor hover changed the input geometry');
+  await motionPage.keyboard.press('Escape');
   await prompt.click();
   await expect(motionPage.getByRole('textbox', { name: 'Your request', exact: true })).toBeFocused();
   await prompt.click();
@@ -176,7 +221,7 @@ try {
   assert.equal(await motionPage.locator('.composer-panel').evaluate((element: HTMLElement) => element.getAnimations().length), 0, 'Keyboard expansion should be instant');
   await motionContext.close();
   assert.deepEqual(errors, []);
-  console.log('Composer checks passed: fixed controls, states, draft recovery, questions, correction updates, confirmation, sizing, navigation and no browser errors.');
+  console.log('Composer checks passed: fixed input geometry, unscaled text, spacing, close-to-pill navigation, draft recovery, questions, confirmation, sizing and no browser errors.');
 } finally {
   await browser.close();
   server.stop(true);
