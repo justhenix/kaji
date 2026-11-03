@@ -184,6 +184,15 @@ export async function openMainWindow(): Promise<void> {
   window.location.href = 'index.html';
 }
 
+export async function openComposer(scale = 1): Promise<void> {
+  if (isTauri) await invoke('gui_set_view', { view: 'composer', width: Math.ceil(424 * scale), height: Math.ceil(84 * scale) });
+  window.location.href = 'composer.html';
+}
+
+export async function setComposerFrame(width: number, height: number): Promise<void> {
+  if (isTauri) await invoke('gui_set_view', { view: 'composer', width: Math.ceil(width), height: Math.ceil(height) });
+}
+
 export async function openGitHub(): Promise<void> {
   if (isTauri) await invoke('gui_open_github');
   else window.open('https://github.com/justhenix/kaji', '_blank', 'noopener,noreferrer');

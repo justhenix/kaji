@@ -78,6 +78,15 @@ const buildSettings = await Bun.build({
 });
 if (!buildSettings.success) throw new AggregateError(buildSettings.logs, "Settings app build failed");
 
+const buildComposer = await Bun.build({
+  entrypoints: [resolve(root, "src/gui/composerApp.ts")],
+  outdir: out,
+  naming: "composer.[ext]",
+  target: "browser",
+  minify: false,
+});
+if (!buildComposer.success) throw new AggregateError(buildComposer.logs, "Composer build failed");
+
 // 7. HTML Entry Points
 await Bun.write(
   resolve(out, "index.html"),
@@ -133,4 +142,21 @@ await Bun.write(
 </html>`
 );
 
-console.log("Built bundled GUI (Main & Settings), sensor, MediaPipe WASM, and copied all design assets.");
+await Bun.write(resolve(out, 'composer.html'), `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kaji</title>
+  <link rel="icon" href="/logo/kaji-mark.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/fonts/remixicon.css" />
+  <link rel="stylesheet" href="/styles/theme.css" />
+  <link rel="stylesheet" href="/styles/composer.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="/composer.js"></script>
+</body>
+</html>`);
+
+console.log("Built composer, main and settings GUI, sensor, MediaPipe WASM, and design assets.");

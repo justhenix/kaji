@@ -2,7 +2,7 @@ import { createDitherAccents } from './components/DitherAccent';
 import { prepareControls } from './components/Controls';
 import { showAboutModal } from './components/Modal';
 import { createTitleBar } from './components/TitleBar';
-import { emergencyStop, openSettingsWindow, pauseAll, setMode, toggleHeadControl, toggleVoice } from './ipc';
+import { emergencyStop, openComposer, openSettingsWindow, pauseAll, setMode, toggleHeadControl, toggleVoice } from './ipc';
 import { store } from './store';
 import { getStatusLabel } from './status';
 
@@ -195,6 +195,13 @@ function renderMainApp(): void {
 
     <!-- Footer -->
     <footer class="main-footer">
+      <button class="footer-btn" id="footer-composer-btn">
+        <i class="ri-layout-top-line"></i>
+        <span>Composer</span>
+      </button>
+
+      <span class="footer-separator">|</span>
+
       <button class="footer-btn" id="footer-settings-btn">
         <i class="ri-settings-3-line"></i>
         <span>Settings</span>
@@ -306,6 +313,8 @@ function renderMainApp(): void {
   };
 
   // Footer Actions
+  const composerBtn = container.querySelector('#footer-composer-btn') as HTMLButtonElement;
+  composerBtn.onclick = () => { void openComposer(store.settings.composer_size / 100); };
   const settingsBtn = container.querySelector('#footer-settings-btn') as HTMLButtonElement;
   settingsBtn.onclick = () => {
     openSettingsWindow();
