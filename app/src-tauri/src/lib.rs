@@ -5,6 +5,7 @@ pub mod engine;
 pub mod face;
 pub mod native;
 pub mod uia;
+pub mod gui;
 
 pub type Result<T> = std::result::Result<T, String>;
 
