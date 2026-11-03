@@ -1,6 +1,23 @@
 fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
-        tauri_build::AppManifest::new().commands(&["sensor_ready", "sensor_frame", "sensor_fault"]),
+        tauri_build::AppManifest::new().commands(&[
+            "sensor_ready",
+            "sensor_frame",
+            "sensor_fault",
+            "gui_get_settings",
+            "gui_save_settings",
+            "gui_get_engine_status",
+            "gui_set_mode",
+            "gui_toggle_head_control",
+            "gui_toggle_voice",
+            "gui_pause_all",
+            "gui_emergency_stop",
+            "gui_set_view",
+            "gui_open_github",
+            "gui_calibrate",
+            "gui_window_minimize",
+            "gui_window_close",
+        ]),
     ))
     .expect("Tauri manifest generation failed");
 }
