@@ -185,7 +185,7 @@ export async function openMainWindow(): Promise<void> {
 }
 
 export async function openComposer(scale = 1): Promise<void> {
-  if (isTauri) await invoke('gui_set_view', { view: 'composer', width: Math.ceil(424 * scale), height: Math.ceil(84 * scale) });
+  if (isTauri) await invoke('gui_set_view', { view: 'composer', width: Math.ceil(472 * scale), height: Math.ceil(92 * scale) });
   window.location.href = 'composer.html';
 }
 
@@ -213,7 +213,7 @@ export async function windowMinimize(label: string): Promise<void> {
 export async function windowClose(label: string): Promise<void> {
   if (isTauri) {
     await invoke('gui_window_close', { label });
-  }
+  } else await openComposer((await fetchSettings()).composer_size / 100);
 }
 
 export function onNavigateSettings(callback: (page: string) => void): () => void {

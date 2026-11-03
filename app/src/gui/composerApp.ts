@@ -352,15 +352,14 @@ export class Composer {
       this.get(selector).hidden = next !== name;
     }
     this.panel.hidden = !next;
-    this.panel.style.setProperty('--panel-width', next === 'question' ? '440px' : '520px');
+    this.panel.style.setProperty('--panel-width', next === 'question' ? '448px' : '520px');
     await this.resize();
     if (generation !== this.generation) return;
     if (next && animate && !reduced) {
       const direction = this.stage.dataset.placement === 'top' ? -1 : 1;
       this.motion = this.panel.animate([
-        { opacity: wasVisible ? opacity : 0, transform: wasVisible ? transform : `translateY(${direction * 5}px) scale(0.975)` },
-        { opacity: 1, transform: 'translateY(0) scale(1.006)', offset: 0.78 },
-        { opacity: 1, transform: 'translateY(0) scale(1)' },
+        { opacity: wasVisible ? opacity : 0, transform: wasVisible ? transform : `translateY(${direction * 5}px)` },
+        { opacity: 1, transform: 'translateY(0)' },
       ], { duration: 250, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
     }
     if (!next && restoreFocus) this.prompt.focus({ preventScroll: true });
@@ -382,9 +381,9 @@ export class Composer {
   private async resize(): Promise<void> {
     if (this.leaving) return;
     const scale = store.settings.composer_size / 100;
-    const width = ((this.currentPanel === 'question' ? 440 : this.currentPanel ? 520 : 400) + 24) * scale;
+    const width = ((this.currentPanel === 'editor' || this.currentPanel === 'notice' ? 520 : 448) + 24) * scale;
     const bodyHeight = this.currentPanel ? Math.min(this.panel.scrollHeight + 2, 400) + 8 : 0;
-    const height = (84 + bodyHeight) * scale;
+    const height = (92 + bodyHeight) * scale;
     const key = `${Math.ceil(width)}:${Math.ceil(height)}:${store.settings.composer_position}`;
     if (this.frameKey === key) return;
     this.frameKey = key;

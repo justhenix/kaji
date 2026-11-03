@@ -167,8 +167,8 @@ fn gui_set_view(app: tauri::AppHandle, state: State<'_, Arc<GuiManager>>, view: 
 fn configure_gui_view(window: &tauri::WebviewWindow, view: &str, settings: &AppSettings, width: Option<f64>, height: Option<f64>) -> Result<(), String> {
     let was_composer = !window.is_resizable().map_err(|e| e.to_string())?;
     if view == "composer" {
-        let width = width.unwrap_or(424.0);
-        let height = height.unwrap_or(84.0);
+        let width = width.unwrap_or(472.0);
+        let height = height.unwrap_or(92.0);
         if !width.is_finite() || !height.is_finite() || !(200.0..=900.0).contains(&width) || !(40.0..=900.0).contains(&height) {
             return Err("invalid composer dimensions".into());
         }
@@ -240,13 +240,7 @@ fn gui_window_minimize(app: tauri::AppHandle, label: String) -> Result<(), Strin
 
 #[tauri::command]
 fn gui_window_close(app: tauri::AppHandle, label: String) -> Result<(), String> {
-    if label == "settings" {
-        if let Some(win) = app.get_webview_window("settings") {
-            win.hide().map_err(|e| e.to_string())
-        } else {
-            Err("settings window not found".into())
-        }
-    } else if let Some(win) = app.get_webview_window(&label) {
+    if let Some(win) = app.get_webview_window(&label) {
         win.close().map_err(|e| e.to_string())
     } else {
         Err(format!("window {label} not found"))
@@ -387,8 +381,33 @@ fn main() {
                     .build()?;
                 if composer {
                     let scale = f64::from(settings.composer_size) / 100.0;
-                    configure_gui_view(&window, "composer", &settings, Some(424.0 * scale), Some(84.0 * scale))?;
+                    configure_gui_view(&window, "composer", &settings, Some(472.0 * scale), Some(92.0 * scale))?;
                 }
+                let close_window = window.clone();
+                let close_gui = gui_mgr.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        if !close_window.is_resizable().unwrap_or(false) {
+                            close_window.app_handle().exit(0);
+                            return;
+                        }
+                        let window = close_window.clone();
+                        let gui = close_gui.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let restore = || -> Result<(), String> {
+                                let settings = gui.get_settings()?;
+                                let scale = f64::from(settings.composer_size) / 100.0;
+                                let url = window.url().map_err(|e| e.to_string())?.join("composer.html").map_err(|e| e.to_string())?;
+                                configure_gui_view(&window, "composer", &settings, Some(472.0 * scale), Some(92.0 * scale))?;
+                                window.navigate(url).map_err(|e| e.to_string())?;
+                                window.unminimize().map_err(|e| e.to_string())?;
+                                window.show().map_err(|e| e.to_string())
+                            };
+                            if let Err(error) = restore() { eprintln!("Couldn’t return to composer: {error}"); }
+                        });
+                    }
+                });
                 window.show()?;
 
                 // Background sensor window for head-control capability

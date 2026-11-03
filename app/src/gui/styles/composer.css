@@ -25,20 +25,21 @@ body { overflow: hidden; }
   border: 1px solid var(--border-medium);
 }
 .composer-pill {
-  width: min(400px, var(--available-width));
-  height: 60px;
-  padding: 5px;
-  display: flex;
+  width: min(448px, var(--available-width));
+  height: 68px;
+  padding: 9px 12px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 9px 48px 76px 48px;
   align-items: center;
-  gap: 3px;
-  border-radius: 30px;
+  gap: 4px;
+  border-radius: 34px;
 }
 .composer-brand { display: grid; place-items: center; width: 40px; height: 48px; flex: 0 0 40px; }
 .composer-prompt {
-  flex: 1;
+  width: 100%;
   min-width: 0;
   height: 48px;
-  padding: 0 10px 0 3px;
+  padding: 0 12px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -47,7 +48,7 @@ body { overflow: hidden; }
   text-align: left;
   cursor: text;
 }
-.composer-prompt span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.composer-prompt span { display: block; line-height: 20px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .composer-divider { height: 22px; width: 1px; margin: 0 4px; background: var(--border-subtle); flex-shrink: 0; }
 .composer-stage button { -webkit-app-region: no-drag; }
 .composer-icon {
@@ -70,7 +71,7 @@ body { overflow: hidden; }
 .composer-icon i { font-size: 19px; }
 .composer-voice { background: var(--kaji-blue); color: var(--on-accent); }
 .composer-voice[aria-pressed="true"] { background: var(--kaji-pink); color: #341326; }
-.composer-dwell { min-width: 72px; border-radius: 24px; }
+.composer-dwell { min-width: 76px; border-radius: 24px; }
 .composer-dwell[aria-pressed="true"] { color: var(--kaji-blue); }
 .composer-dwell[aria-pressed="false"] { color: var(--text-muted); }
 .composer-icon[data-dwelling="true"]::after {
@@ -81,19 +82,20 @@ body { overflow: hidden; }
 }
 .composer-panel {
   width: min(var(--panel-width, 520px), var(--available-width));
-  max-height: min(400px, calc(100vh / var(--composer-scale) - 92px));
+  max-height: min(400px, calc(100vh / var(--composer-scale) - 100px));
   overflow-y: auto;
   overscroll-behavior: contain;
   border-radius: 18px;
   transform-origin: bottom right;
 }
 [data-placement="top"] .composer-panel { transform-origin: top right; }
-.composer-editor { padding: 16px; }
+.composer-editor { padding: 20px; }
 .composer-editor textarea {
   display: block;
   width: 100%;
-  height: 88px;
-  padding: 4px;
+  min-width: 0;
+  height: 104px;
+  padding: 12px;
   resize: none;
   border: 0;
   border-radius: 6px;
@@ -114,7 +116,7 @@ body { overflow: hidden; }
 .composer-primary i { font-size: 17px; }
 .composer-secondary { background: var(--surface-hover); color: var(--text-primary); border: 1px solid transparent; }
 .composer-primary:disabled { background: var(--surface-hover); color: var(--text-muted); cursor: default; }
-.composer-question { padding: 16px; }
+.composer-question { padding: 20px; }
 .composer-question-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
 .composer-question-header h2 { flex: 1; padding-top: 10px; font: 650 18px/1.35 var(--font-heading); letter-spacing: -0.025em; overflow-wrap: anywhere; }
 .composer-question-header .composer-icon { min-width: 44px; height: 44px; margin-right: -6px; }
@@ -168,7 +170,7 @@ body { overflow: hidden; }
   .agent-mark:is([data-state="working"], [data-state="thinking"]) [data-active="true"] { animation: composer-pixel 650ms ease-in-out var(--cell-delay) infinite; }
   .agent-mark[data-state="thinking"] [data-active="true"] { animation-duration: 950ms; }
   .composer-stage button { transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease; }
-  .composer-stage button:active:not([data-dwelling="true"]):not(:focus-visible):not(:disabled) { transform: scale(0.98); }
+  .composer-stage button:active:not(.composer-prompt):not([data-dwelling="true"]):not(:focus-visible):not(:disabled) { transform: scale(0.98); }
 }
 @media (prefers-reduced-motion: reduce) {
   .agent-mark:is([data-state="working"], [data-state="thinking"]) [data-active="true"] { opacity: 0.9; }
