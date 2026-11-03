@@ -1,0 +1,183 @@
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
+// @ts-ignore Playwright is already installed in the web workspace.
+import { chromium, expect } from '../../web/node_modules/@playwright/test/index';
+import type { ComposerQuestion, ComposerUpdate } from '../src/gui/composerApp';
+
+const dist = resolve(import.meta.dir, '../dist');
+const output = resolve(import.meta.dir, '../verification/screenshots');
+await mkdir(output, { recursive: true });
+const server = Bun.serve({ port: 0, async fetch(request) {
+  const path = new URL(request.url).pathname;
+  const target = resolve(dist, path === '/' ? 'index.html' : path.slice(1));
+  if (!target.startsWith(dist + sep)) return new Response('Not found', { status: 404 });
+  const file = Bun.file(target);
+  return await file.exists() ? new Response(file) : new Response('Not found', { status: 404 });
+} });
+const origin = `http://127.0.0.1:${server.port}`;
+const browser = await chromium.launch({ channel: 'chrome' });
+const context = await browser.newContext({ viewport: { width: 680, height: 620 }, reducedMotion: 'reduce' });
+const page = await context.newPage();
+const errors: string[] = [];
+page.on('pageerror', (error: Error) => errors.push(error.message));
+const question: ComposerQuestion = {
+  id: 'flavor-count', title: 'How many flavors should we launch?', allowCustom: true, step: 1, total: 3,
+  options: [{ id: 'three', label: 'Three', value: '3' }, { id: 'five', label: 'Five', value: '5' }, { id: 'one', label: 'One', value: '1' }],
+};
+async function update(detail: ComposerUpdate) {
+  await page.evaluate((value: ComposerUpdate) => window.dispatchEvent(new CustomEvent('kaji:composer-update', { detail: value })), detail);
+}
+async function screenshot(name: string) {
+  await page.evaluate(() => document.fonts.ready);
+  await page.locator('.composer-stage').screenshot({ path: resolve(output, `composer-${name}.png`) });
+}
+async function assertInside() {
+  await expect.poll(() => page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.composer-pill button, .composer-panel:not([hidden])')].flatMap((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.left < -1 || rect.right > innerWidth + 1 || rect.top < -1 || rect.bottom > innerHeight + 1
+      ? [{ element: element.className, rect: rect.toJSON(), viewport: [innerWidth, innerHeight], placement: document.querySelector<HTMLElement>('.composer-stage')?.dataset.placement }] : [];
+  })), { message: 'Composer clips controls after layout settles' }).toEqual([]);
+}
+async function fitNativeFrame(panelWidth: number, scale: number) {
+  const panelHeight = await page.locator('.composer-panel').evaluate((element: HTMLElement) => Math.min(element.scrollHeight + 2, 400));
+  await page.setViewportSize({ width: Math.ceil((panelWidth + 24) * scale), height: Math.ceil((92 + panelHeight) * scale) });
+  await assertInside();
+  await expect.poll(() => page.locator('.composer-panel').evaluate((element: HTMLElement) => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
+}
+try {
+  await page.goto(`${origin}/index.html`);
+  await page.getByRole('button', { name: 'Composer', exact: true }).click();
+  await expect(page).toHaveURL(/composer\.html$/);
+  await expect(page.getByRole('button', { name: 'Start listening', exact: true })).toBeVisible();
+  await page.evaluate(() => { localStorage.setItem('kaji_settings', JSON.stringify({ theme: 'dark', composer_size: 100, composer_opacity: 100 })); });
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  const pill = await page.locator('.composer-pill').boundingBox();
+  assert.equal(pill!.width, 400); assert.equal(pill!.height, 60);
+  for (const button of await page.locator('.composer-pill button').all()) {
+    const box = (await button.boundingBox())!;
+    assert.ok(box.width >= 44 && box.height >= 44, 'Control target is too small');
+  }
+  await screenshot('idle-dark');
+  await page.evaluate(() => { (window as any).composerActions = []; window.addEventListener('kaji:composer-action', (event) => (window as any).composerActions.push((event as CustomEvent).detail)); });
+  await page.getByRole('button', { name: 'Start listening', exact: true }).click();
+  await expect(page.locator('.agent-mark')).toHaveAttribute('data-state', 'listening');
+  await update({ transcript: 'Summarize this page', audioLevel: 0.7 });
+  await screenshot('listening-dark');
+  await page.getByRole('button', { name: 'Stop listening', exact: true }).click();
+  await page.getByRole('button', { name: 'Pause dwell', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Resume dwell', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('button', { name: 'Resume dwell', exact: true }).click();
+  const controls = await page.locator('.composer-pill button:not(.composer-prompt)').evaluateAll((elements: HTMLElement[]) => elements.map((element) => { const rect = element.getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height]; }));
+  await page.getByRole('button', { name: 'Type a request', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Your request', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+  await page.getByRole('textbox', { name: 'Your request', exact: true }).fill('Summarize this page');
+  await screenshot('editor-dark');
+  assert.deepEqual(await page.locator('.composer-pill button:not(.composer-prompt)').evaluateAll((elements: HTMLElement[]) => elements.map((element) => { const rect = element.getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height]; })), controls, 'Expansion moved the controls');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Type a request', exact: true })).toBeFocused();
+  await page.getByRole('button', { name: 'Open Kaji', exact: true }).click();
+  await expect(page.locator('h1')).toBeVisible();
+  await page.getByRole('button', { name: 'Composer', exact: true }).click();
+  assert.equal(context.pages().length, 1);
+  await page.getByRole('button', { name: 'Type a request', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Your request', exact: true })).toHaveValue('Summarize this page');
+  await page.evaluate(() => { (window as any).composerActions = []; window.addEventListener('kaji:composer-action', (event) => (window as any).composerActions.push((event as CustomEvent).detail)); });
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.agent-mark')).toHaveAttribute('data-state', 'thinking');
+  assert.deepEqual(await page.evaluate(() => (window as any).composerActions), [{ type: 'request', text: 'Summarize this page' }]);
+  await screenshot('thinking-dark');
+  await update({ state: 'working', message: 'Reading the current document…' });
+  await page.getByRole('button', { name: 'Show task details', exact: true }).click();
+  await screenshot('working-dark');
+  await page.getByRole('button', { name: 'Stop task', exact: true }).click();
+  await expect(page.locator('.agent-mark')).toHaveAttribute('data-state', 'ready');
+  await update({ state: 'listening', transcript: 'The previous request' });
+  await update({ question });
+  await expect(page.locator('.composer-prompt span')).toHaveText('Your answer…');
+  await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Skip', exact: true })).toBeHidden();
+  await page.getByRole('button', { name: 'B Five', exact: true }).click();
+  await expect(page.locator('.composer-answer')).toHaveText('Your answer: Five');
+  await update({ questionId: question.id, answer: '3' });
+  await update({ questionId: question.id, answer: '5' });
+  await update({ questionId: question.id, answer: '10' });
+  await update({ questionId: 'old-question', answer: '3' });
+  await expect(page.locator('.composer-answer')).toHaveText('Your answer: 10');
+  assert.equal((await page.evaluate(() => (window as any).composerActions)).filter((action: any) => action.type === 'answer').length, 0);
+  await screenshot('question-dark');
+  await assertInside();
+  await page.getByRole('button', { name: 'Dismiss question', exact: true }).click();
+  await expect(page.locator('.composer-question')).toBeHidden();
+  await page.getByRole('button', { name: 'Open question', exact: true }).click();
+  await expect(page.locator('.composer-answer')).toHaveText('Your answer: 10');
+  await page.getByRole('button', { name: 'Open Kaji', exact: true }).click();
+  await page.getByRole('button', { name: 'Composer', exact: true }).click();
+  await expect(page.locator('.composer-answer')).toHaveText('Your answer: 10');
+  await page.evaluate(() => { (window as any).answers = []; window.addEventListener('kaji:composer-action', (event) => (window as any).answers.push((event as CustomEvent).detail)); });
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => (window as any).answers), [{ type: 'answer', questionId: question.id, answer: '10' }]);
+  await update({ question: { ...question, id: 'approval', kind: 'approval', allowCustom: false } });
+  await update({ questionId: 'approval', answer: '10' });
+  await expect(page.getByRole('button', { name: 'Confirm', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'A Three', exact: true }).click();
+  await screenshot('approval-dark');
+  await update({ question: { ...question, id: 'optional', optional: true } });
+  await expect(page.getByRole('button', { name: 'Skip', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Skip', exact: true }).click();
+  await expect(page.locator('.composer-question')).toBeHidden();
+  await update({ state: 'failed', message: 'Couldn’t read this window. Choose another window and try again.' });
+  await screenshot('failed-dark');
+  await update({ state: 'ready' });
+  await page.getByRole('button', { name: 'Collapse details', exact: true }).click();
+  await update({ dwellTarget: 'voice', dwellProgress: 0.65 });
+  await screenshot('dwell-dark');
+  for (const placement of ['top', 'floating', 'taskbar']) {
+    for (const size of [75, 100, 102, 150]) {
+      await page.setViewportSize({ width: 680, height: 620 });
+      await page.evaluate(({ placement, size }: { placement: string; size: number }) => {
+        localStorage.setItem('kaji_settings', JSON.stringify({ theme: 'light', composer_position: placement, composer_size: size, composer_opacity: 100 }));
+        sessionStorage.removeItem('kaji-composer-question');
+      }, { placement, size });
+      await page.reload();
+      await page.getByRole('button', { name: 'Type a request', exact: true }).click();
+      await assertInside();
+      if (size === 100) await screenshot(`editor-${placement}-light`);
+      await fitNativeFrame(520, size / 100);
+      await update({ question });
+      await fitNativeFrame(440, size / 100);
+    }
+  }
+  await page.evaluate(() => { localStorage.setItem('kaji_settings', JSON.stringify({ theme: 'light', composer_position: 'floating', composer_size: 100, composer_opacity: 100 })); sessionStorage.removeItem('kaji-composer-question'); });
+  await page.reload();
+  await page.setViewportSize({ width: 680, height: 620 });
+  await screenshot('idle-light');
+  await update({ question });
+  await screenshot('question-light');
+  await page.setViewportSize({ width: 360, height: 480 });
+  await assertInside();
+  await screenshot('question-narrow');
+  const motionContext = await browser.newContext({ viewport: { width: 680, height: 620 }, reducedMotion: 'no-preference' });
+  const motionPage = await motionContext.newPage();
+  await motionPage.goto(`${origin}/composer.html`);
+  const prompt = motionPage.getByRole('button', { name: 'Type a request', exact: true });
+  await prompt.click();
+  await expect(motionPage.getByRole('textbox', { name: 'Your request', exact: true })).toBeFocused();
+  await prompt.click();
+  await prompt.click();
+  await expect(motionPage.locator('.composer-panel')).toBeVisible();
+  await expect(prompt).toHaveAttribute('aria-expanded', 'true');
+  await motionPage.keyboard.press('Escape');
+  await expect(motionPage.locator('.composer-panel')).toBeHidden();
+  await prompt.focus();
+  await motionPage.keyboard.press('Enter');
+  assert.equal(await motionPage.locator('.composer-panel').evaluate((element: HTMLElement) => element.getAnimations().length), 0, 'Keyboard expansion should be instant');
+  await motionContext.close();
+  assert.deepEqual(errors, []);
+  console.log('Composer checks passed: fixed controls, states, draft recovery, questions, correction updates, confirmation, sizing, navigation and no browser errors.');
+} finally {
+  await browser.close();
+  server.stop(true);
+}
