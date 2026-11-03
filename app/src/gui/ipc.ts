@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { AppSettings, EngineGuiStatus } from './types';
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -191,6 +192,10 @@ export async function openComposer(scale = 1): Promise<void> {
 
 export async function setComposerFrame(width: number, height: number): Promise<void> {
   if (isTauri) await invoke('gui_set_view', { view: 'composer', width: Math.ceil(width), height: Math.ceil(height) });
+}
+
+export async function startWindowDrag(): Promise<void> {
+  if (isTauri) await getCurrentWindow().startDragging();
 }
 
 export async function openGitHub(): Promise<void> {

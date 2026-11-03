@@ -1,5 +1,5 @@
 import { AgentMark, type AgentState } from './components/AgentMark';
-import { openMainWindow, setComposerFrame } from './ipc';
+import { openMainWindow, setComposerFrame, startWindowDrag } from './ipc';
 import { store } from './store';
 
 export interface ComposerQuestion {
@@ -98,8 +98,8 @@ export class Composer {
           <p class="composer-notice-text"></p>
         </section>
       </section>
-      <div class="composer-pill">
-        <span class="composer-brand" data-tauri-drag-region></span>
+      <div class="composer-pill" data-tauri-drag-region>
+        <span class="composer-brand" title="Drag to move"></span>
         <button class="composer-prompt" type="button" aria-label="Type a request" aria-expanded="false" aria-controls="composer-panel"><span>Ask Kaji…</span></button>
         <span class="composer-divider" aria-hidden="true"></span>
         <button class="composer-icon composer-voice" type="button" data-dwell-id="voice" aria-label="Start listening" title="Start listening" aria-pressed="false"><i class="ri-mic-line" aria-hidden="true"></i></button>
@@ -140,6 +140,11 @@ export class Composer {
   }
 
   private bind(): void {
+    this.get('.composer-brand').onpointerdown = (event) => {
+      if (event.button !== 0) return;
+      event.stopPropagation();
+      void startWindowDrag();
+    };
     this.prompt.onclick = (event) => {
       const next = this.desiredPanel ? null : this.question ? 'question' : ['failed', 'working', 'thinking'].includes(this.state) ? 'notice' : 'editor';
       if (next === 'question') { this.state = 'question'; this.renderState(); }
@@ -331,13 +336,13 @@ export class Composer {
   }
 
   private async openPanel(next: Panel, animate = true): Promise<void> {
+    if (next === this.desiredPanel) return this.frameUpdates;
     const generation = ++this.generation;
     this.desiredPanel = next;
     const restoreFocus = this.panel.contains(document.activeElement);
     const wasVisible = !this.panel.hidden;
     const previous = getComputedStyle(this.panel);
     const opacity = previous.opacity;
-    const transform = previous.transform;
     this.motion?.cancel();
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (!next && !this.panel.hidden && animate && !reduced) {
@@ -353,15 +358,14 @@ export class Composer {
     }
     this.panel.hidden = !next;
     this.panel.style.setProperty('--panel-width', next === 'question' ? '448px' : '520px');
+    if (next && animate && !reduced) {
+      this.motion = this.panel.animate([
+        { opacity: wasVisible ? opacity : 0 },
+        { opacity: 1 },
+      ], { duration: 160, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
+    }
     await this.resize();
     if (generation !== this.generation) return;
-    if (next && animate && !reduced) {
-      const direction = this.stage.dataset.placement === 'top' ? -1 : 1;
-      this.motion = this.panel.animate([
-        { opacity: wasVisible ? opacity : 0, transform: wasVisible ? transform : `translateY(${direction * 5}px)` },
-        { opacity: 1, transform: 'translateY(0)' },
-      ], { duration: 250, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
-    }
     if (!next && restoreFocus) this.prompt.focus({ preventScroll: true });
   }
 

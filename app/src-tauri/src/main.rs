@@ -12,6 +12,11 @@ use tauri::{
     Manager, State, WebviewUrl, WebviewWindowBuilder,
     webview::{PermissionKind, PermissionResponse},
 };
+use windows::Win32::{
+    Foundation::HWND,
+    Graphics::Gdi::{CombineRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn, RGN_OR},
+    UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER},
+};
 
 struct SensorState {
     engine: Arc<Engine>,
@@ -60,6 +65,69 @@ fn sensor_ready(state: State<'_, SensorState>, warmup_ms: f64) -> Result<Session
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+    use windows::{
+        core::w,
+        Win32::{
+            Foundation::{LPARAM, LRESULT, RECT, WPARAM},
+            System::LibraryLoader::GetModuleHandleW,
+            UI::WindowsAndMessaging::*,
+            Graphics::Gdi::{CreateRectRgn, GetWindowRgn, PtInRegion},
+        },
+    };
+
+    thread_local! { static BOUNDS: RefCell<Vec<(i32, i32)>> = const { RefCell::new(Vec::new()) }; }
+
+    unsafe extern "system" fn bounds_proc(hwnd: HWND, message: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+        unsafe {
+            if message == WM_WINDOWPOSCHANGED {
+                let mut rect = RECT::default();
+                if GetWindowRect(hwnd, &mut rect).is_ok() {
+                    BOUNDS.with(|frames| frames.borrow_mut().push((rect.right, rect.bottom)));
+                }
+            }
+            DefWindowProcW(hwnd, message, wp, lp)
+        }
+    }
+
+    #[test]
+    fn composer_toggles_keep_viewport_and_pill_visible() {
+        unsafe {
+            let instance = GetModuleHandleW(None).unwrap();
+            let class = WNDCLASSW {
+                hInstance: instance.into(), lpszClassName: w!("KajiComposerBoundsCheck"),
+                lpfnWndProc: Some(bounds_proc), ..Default::default()
+            };
+            assert_ne!(RegisterClassW(&class), 0);
+            let window = CreateWindowExW(WS_EX_NOACTIVATE, class.lpszClassName, w!(""), WS_POPUP,
+                0, 0, 472, 92, None, None, Some(instance.into()), None).unwrap();
+            for (width, height) in [(472, 92), (544, 302), (472, 92), (555, 308), (472, 92)] {
+                BOUNDS.with(|frames| frames.borrow_mut().clear());
+                set_composer_bounds(window, 1000 - width, 800 - height, width, height).unwrap();
+                BOUNDS.with(|frames| assert_eq!(*frames.borrow(), [(1000, 800)], "Native bounds exposed a moving anchor"));
+            }
+            for unit in [0.75, 1.0, 1.02, 1.5] {
+                let px = |value: f64| (value * unit).round() as i32;
+                set_composer_bounds(window, 0, 0, px(544.0), px(500.0)).unwrap();
+                for top in [false, true] {
+                    for expanded in [false, true, false, true, false] {
+                        set_composer_region(window, px(544.0), px(500.0), px(if expanded { 544.0 } else { 472.0 }), px(if expanded { 302.0 } else { 92.0 }), unit, top).unwrap();
+                        let mut rect = RECT::default();
+                        GetWindowRect(window, &mut rect).unwrap();
+                        assert_eq!((rect.left, rect.top, rect.right, rect.bottom), (0, 0, px(544.0), px(500.0)), "Toggling the input resized the native viewport");
+                        let region = CreateRectRgn(0, 0, 0, 0);
+                        assert_ne!(GetWindowRgn(window, region).0, 0);
+                        assert!(PtInRegion(region, px(300.0), px(if top { 46.0 } else { 454.0 })).as_bool(), "Pill disappeared from the visible region");
+                        assert_eq!(PtInRegion(region, px(300.0), px(if top { 140.0 } else { 300.0 })).as_bool(), expanded, "Editor region did not follow its state");
+                        assert!(!PtInRegion(region, px(20.0), px(if top { 46.0 } else { 454.0 })).as_bool(), "Invisible area intercepts the desktop");
+                        let _ = DeleteObject(region.into());
+                    }
+                }
+            }
+            DestroyWindow(window).unwrap();
+            UnregisterClassW(class.lpszClassName, Some(instance.into())).unwrap();
+        }
+    }
     #[test]
     fn cancelled_sensor_cannot_arm_after_late_warmup() {
         let mut gate = SensorSession {
@@ -164,6 +232,37 @@ fn gui_set_view(app: tauri::AppHandle, state: State<'_, Arc<GuiManager>>, view: 
     configure_gui_view(&window, &view, &state.get_settings()?, width, height)
 }
 
+fn set_composer_bounds(hwnd: HWND, x: i32, y: i32, width: i32, height: i32) -> windows::core::Result<()> {
+    // Commit size and position together so the anchored pill has no intermediate frame.
+    unsafe { SetWindowPos(hwnd, None, x, y, width, height, SWP_NOACTIVATE | SWP_NOZORDER) }
+}
+
+fn set_composer_region(hwnd: HWND, frame_width: i32, frame_height: i32, width: i32, height: i32, unit: f64, top: bool) -> Result<(), String> {
+    let px = |value: f64| (value * unit).round() as i32;
+    let right = frame_width - px(12.0);
+    let pill_top = if top { px(12.0) } else { frame_height - px(80.0) };
+    unsafe {
+        let region = CreateRoundRectRgn((right - px(448.0)).max(px(12.0)), pill_top, right + 1, pill_top + px(68.0) + 1, px(68.0), px(68.0));
+        if region.is_invalid() { return Err("couldn’t create composer region".into()); }
+        if height > px(100.0) {
+            let panel_height = (height - px(100.0)).min(frame_height - px(100.0)).max(0);
+            let panel_top = if top { pill_top + px(76.0) } else { pill_top - px(8.0) - panel_height };
+            let panel = CreateRoundRectRgn((frame_width - width + px(12.0)).max(px(12.0)), panel_top,
+                right + 1, panel_top + panel_height + 1, px(36.0), px(36.0));
+            if panel.is_invalid() { let _ = DeleteObject(region.into()); return Err("couldn’t create composer panel region".into()); }
+            let combined = CombineRgn(Some(region), Some(region), Some(panel), RGN_OR);
+            let _ = DeleteObject(panel.into());
+            if combined.0 == 0 { let _ = DeleteObject(region.into()); return Err("couldn’t combine composer regions".into()); }
+        }
+        // Windows owns the successful region; everything outside it remains click-through.
+        if SetWindowRgn(hwnd, Some(region), true) == 0 {
+            let _ = DeleteObject(region.into());
+            return Err("couldn’t apply composer region".into());
+        }
+    }
+    Ok(())
+}
+
 fn configure_gui_view(window: &tauri::WebviewWindow, view: &str, settings: &AppSettings, width: Option<f64>, height: Option<f64>) -> Result<(), String> {
     let was_composer = !window.is_resizable().map_err(|e| e.to_string())?;
     if view == "composer" {
@@ -179,32 +278,52 @@ fn configure_gui_view(window: &tauri::WebviewWindow, view: &str, settings: &AppS
         let top = f64::from(work.position.y) / scale;
         let work_width = f64::from(work.size.width) / scale;
         let work_height = f64::from(work.size.height) / scale;
-        let width = width.min(work_width);
-        let height = height.min(work_height);
+        let composer_scale = f64::from(settings.composer_size) / 100.0;
+        let content_width = width;
+        let content_height = height;
+        // Keep WebView2's viewport fixed while opening/closing the input.
+        let width = (544.0 * composer_scale).min(work_width);
+        let height = (500.0 * composer_scale).min(work_height);
         let old_size = window.inner_size().map_err(|e| e.to_string())?.to_logical::<f64>(scale);
         let old_position = window.outer_position().map_err(|e| e.to_string())?.to_logical::<f64>(scale);
         let (x, y) = if was_composer {
             (old_position.x + old_size.width - width,
              if settings.composer_position == "top" { old_position.y } else { old_position.y + old_size.height - height })
         } else {
-            (left + (work_width - width) / 2.0, match settings.composer_position.as_str() {
+            let pill_width = (472.0 * composer_scale).min(work_width);
+            let pill_height = (92.0 * composer_scale).min(work_height);
+            (left + (work_width + pill_width) / 2.0 - width, match settings.composer_position.as_str() {
                 "top" => top + 8.0,
                 "taskbar" => top + work_height - height - 8.0,
-                _ => top + (work_height - height) * 0.68,
+                _ => top + (work_height - pill_height) * 0.68 + pill_height - height,
             })
         };
-        window.set_min_size(None::<tauri::LogicalSize<f64>>).map_err(|e| e.to_string())?;
-        window.set_shadow(false).map_err(|e| e.to_string())?;
-        window.set_always_on_top(true).map_err(|e| e.to_string())?;
-        window.set_resizable(false).map_err(|e| e.to_string())?;
-        window.set_size(tauri::LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
-        window.set_position(tauri::LogicalPosition::new(x.clamp(left, left + work_width - width), y.clamp(top, top + work_height - height))).map_err(|e| e.to_string())?;
+        if !was_composer {
+            window.set_min_size(None::<tauri::LogicalSize<f64>>).map_err(|e| e.to_string())?;
+            window.set_shadow(false).map_err(|e| e.to_string())?;
+            window.set_always_on_top(true).map_err(|e| e.to_string())?;
+            window.set_resizable(false).map_err(|e| e.to_string())?;
+        }
+        let hwnd = HWND(window.hwnd().map_err(|e| e.to_string())?.0);
+        if !was_composer || (old_size.width - width).abs() > 0.5 || (old_size.height - height).abs() > 0.5 {
+            set_composer_bounds(hwnd,
+                (x.clamp(left, left + work_width - width) * scale).round() as i32,
+                (y.clamp(top, top + work_height - height) * scale).round() as i32,
+                (width * scale).round() as i32, (height * scale).round() as i32,
+            ).map_err(|e| e.to_string())?;
+        }
+        set_composer_region(hwnd, (width * scale).round() as i32, (height * scale).round() as i32,
+            (content_width * scale).ceil() as i32, (content_height * scale).ceil() as i32,
+            composer_scale * scale, settings.composer_position == "top")?;
     } else {
         let (width, height, min_width, min_height) = match view {
             "main" => (980.0, 700.0, 880.0, 620.0),
             "settings" => (1100.0, 760.0, 920.0, 680.0),
             _ => return Err("view must be main, settings, or composer".into()),
         };
+        if unsafe { SetWindowRgn(HWND(window.hwnd().map_err(|e| e.to_string())?.0), None, true) } == 0 {
+            return Err("couldn’t restore main window region".into());
+        }
         window.set_always_on_top(false).map_err(|e| e.to_string())?;
         window.set_shadow(true).map_err(|e| e.to_string())?;
         window.set_resizable(true).map_err(|e| e.to_string())?;

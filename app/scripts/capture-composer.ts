@@ -220,8 +220,81 @@ try {
   await motionPage.keyboard.press('Enter');
   assert.equal(await motionPage.locator('.composer-panel').evaluate((element: HTMLElement) => element.getAnimations().length), 0, 'Keyboard expansion should be instant');
   await motionContext.close();
+  const nativeContext = await browser.newContext({ viewport: { width: 544, height: 500 }, screen: { width: 1920, height: 1080 }, reducedMotion: 'no-preference' });
+  const nativePage = await nativeContext.newPage();
+  await nativePage.exposeFunction('updateNativeComposerRegion', async ({ height }: { height: number }) => {
+    // The native viewport stays fixed; only its visible/hit-test region changes.
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await nativePage.evaluate((expanded: boolean) => { (window as any).nativeRegionExpanded = expanded; }, height > 100);
+    // Windows applies its region before the IPC acknowledgement reaches JavaScript.
+    await new Promise((resolve) => setTimeout(resolve, 32));
+  });
+  await nativePage.addInitScript(() => {
+    const fixture = window as any;
+    fixture.pendingFrames = 0;
+    fixture.transitionFrames = [];
+    fixture.pillFrames = [];
+    fixture.nativeRegionExpanded = false;
+    fixture.dragRequests = 0;
+    fixture.__TAURI_INTERNALS__ = {
+      metadata: { currentWindow: { label: 'main' } },
+      transformCallback: () => 1,
+      invoke: async (command: string, args: any) => {
+        if (command === 'gui_get_settings') return { theme: 'dark', composer_size: 100, composer_opacity: 100, composer_position: 'floating' };
+        if (command === 'gui_get_engine_status') return { phase: 'ready', mode: 'assist', head_control_active: true, voice_active: false, is_paused: false, session_id: 0 };
+        if (command === 'plugin:window|start_dragging') fixture.dragRequests++;
+        if (command === 'gui_set_view') {
+          fixture.pendingFrames++;
+          try { await fixture.updateNativeComposerRegion(args); }
+          finally { fixture.pendingFrames--; }
+        }
+        return 1;
+      },
+    };
+    function sample() {
+      const panel = document.querySelector<HTMLElement>('.composer-panel');
+      const input = document.querySelector<HTMLTextAreaElement>('#composer-input');
+      const pill = document.querySelector<HTMLElement>('.composer-pill');
+      if (pill) {
+        const rect = pill.getBoundingClientRect();
+        fixture.pillFrames.push([rect.x, rect.y, rect.width, rect.height, getComputedStyle(pill).opacity, getComputedStyle(pill).visibility]);
+      }
+      if (fixture.nativeRegionExpanded && panel && input && !panel.hidden && !input.closest<HTMLElement>('[hidden]') && getComputedStyle(panel).visibility === 'visible') {
+        const rect = input.getBoundingClientRect();
+        fixture.transitionFrames.push({ opacity: Number(getComputedStyle(panel).opacity), width: rect.width, height: rect.height, padding: getComputedStyle(input).padding });
+      }
+      requestAnimationFrame(sample);
+    }
+    requestAnimationFrame(sample);
+  });
+  nativePage.on('pageerror', (error: Error) => errors.push(error.message));
+  await nativePage.goto(`${origin}/composer.html`);
+  await expect.poll(() => nativePage.evaluate(() => (window as any).pendingFrames)).toBe(0);
+  const nativePrompt = nativePage.getByRole('button', { name: 'Type a request', exact: true });
+  for (let cycle = 0; cycle < 3; cycle++) {
+    await nativePage.evaluate(() => { (window as any).transitionFrames = []; });
+    await nativePrompt.click();
+    await expect(nativePage.getByRole('textbox', { name: 'Your request', exact: true })).toBeFocused();
+    await expect.poll(() => nativePage.locator('.composer-panel').evaluate((element: HTMLElement) => element.getAnimations().length)).toBe(0);
+    const opening = await nativePage.evaluate(() => (window as any).transitionFrames) as { opacity: number }[];
+    assert.ok(opening.every((frame, index) => index === 0 || frame.opacity >= opening[index - 1].opacity), 'Editor flashed visible, disappeared, then faded back in');
+    await nativePrompt.click();
+    await expect(nativePage.locator('.composer-panel')).toBeHidden();
+    await expect.poll(() => nativePage.evaluate(() => (window as any).pendingFrames)).toBe(0);
+    const frames = await nativePage.evaluate(() => (window as any).transitionFrames) as { width: number; height: number; padding: string }[];
+    assert.ok(frames.length > 3, 'Did not sample expansion and collapse');
+    assert.equal(new Set(frames.map(({ width, height, padding }) => `${width}:${height}:${padding}`)).size, 1, 'Editor reflowed during expansion/collapse');
+    assert.equal(frames[0].width, 478, 'Editor initially painted at the collapsed window width');
+    assert.deepEqual(nativePage.viewportSize(), { width: 544, height: 500 }, 'Expansion changed the native viewport');
+  }
+  const pillFrames = await nativePage.evaluate(() => (window as any).pillFrames) as any[][];
+  assert.equal(new Set(pillFrames.map((frame) => JSON.stringify(frame))).size, 1, 'Pill moved, resized or disappeared during a toggle');
+  assert.deepEqual(pillFrames[0].slice(4), ['1', 'visible']);
+  await nativePage.locator('.composer-brand img').dispatchEvent('pointerdown', { button: 0 });
+  await expect.poll(() => nativePage.evaluate(() => (window as any).dragRequests)).toBe(1);
+  await nativeContext.close();
   assert.deepEqual(errors, []);
-  console.log('Composer checks passed: fixed input geometry, unscaled text, spacing, close-to-pill navigation, draft recovery, questions, confirmation, sizing and no browser errors.');
+  console.log('Composer checks passed: fixed native viewport, pill visible in every sampled frame, no fade reset, logo dragging, stable input geometry, close-to-pill navigation, questions and sizing.');
 } finally {
   await browser.close();
   server.stop(true);
