@@ -8,3 +8,5 @@ src-tauri/icons/*
 !src-tauri/icons/icon.png
 verification/*.jsonl
 verification/*.json
+verification/user-annotations/
+verification/*_ref.png
