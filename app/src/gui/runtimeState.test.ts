@@ -19,7 +19,7 @@ test('late snapshot cannot roll runtime state back', () => {
 
 test('dwell shows the actual readiness step and treats other input as a pause', () => {
   const head = {...snapshot(1).head,enabled:true,dwellEnabled:true};
-  for (const [phase, status] of [['initializing','Starting'],['calibrating','Calibrate'],['no_face','No face'],['tracking','Move head'],['mouse','Paused']]) {
+  for (const [phase, status] of [['initializing','Starting'],['calibrating','Calibrate'],['no_face','No face'],['tracking','Aim'],['mouse','Paused']]) {
     expect(dwellFeedback({...head,phase:phase!})).toMatchObject({status,failed:false});
   }
   expect(dwellFeedback({...head,phase:'tracking',dwellReady:true})).toMatchObject({status:'Ready',failed:false});

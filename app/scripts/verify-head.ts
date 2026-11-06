@@ -33,7 +33,7 @@ try {
     return String(e?.value ?? e?.name ?? "").trim();
   };
   console.log(`Real Calculator button: ${button.name}, screen point ${JSON.stringify(button.clickable)}.`);
-  console.log("Hold your neutral head position until tracking activates. Then turn your head to move onto 7, return to neutral, and dwell for 1.2 seconds. Escape stops immediately. Keep hands off mouse and keyboard after capture starts.");
+  console.log("Hold your neutral head position until tracking activates. Then move your head to aim at 7 and hold that pose for 1.2 seconds. Escape stops immediately. Keep hands off mouse and keyboard after capture starts.");
   sensor = new DiagnosticClient("kaji", ["--camera", "--enable-input", "--hwnd", String(hwnd), "--seconds", String(seconds), "--stdio"]);
   const started = performance.now(); let lastPhase = "";
   let observedClicks=0;

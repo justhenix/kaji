@@ -74,10 +74,10 @@ impl PoseFilter {
         now: f64,
         raw: Point,
         neutral: Option<Point>,
-        dead_zone: f64,
+        _dead_zone: f64,
     ) -> Point {
         let dt = (now - self.time).max(0.);
-        let mut value = if let Some(previous) = self.value.filter(|_| dt <= 1000.) {
+        let value = if let Some(previous) = self.value.filter(|_| dt <= 1000.) {
             let smoothing_ms = if neutral.is_some() { 60. } else { 120. };
             let alpha = 1. - (-dt / smoothing_ms).exp();
             Point {
@@ -87,20 +87,6 @@ impl PoseFilter {
         } else {
             raw
         };
-        if let Some(neutral) = neutral {
-            if (raw.x - neutral.x).abs() <= dead_zone {
-                value.x = neutral.x;
-            }
-            if (raw.y - neutral.y).abs() <= dead_zone {
-                value.y = neutral.y;
-            }
-            if (value.x - neutral.x) * (raw.x - neutral.x) < 0. {
-                value.x = neutral.x;
-            }
-            if (value.y - neutral.y) * (raw.y - neutral.y) < 0. {
-                value.y = neutral.y;
-            }
-        }
         self.value = Some(value);
         self.time = now;
         value
@@ -156,41 +142,57 @@ impl Calibration {
 
 #[derive(Default, Debug)]
 pub struct Motion {
-    filtered: Point,
+    anchor: Option<Point>,
+    pending: Point,
     remainder: Point,
 }
 impl Motion {
-    pub fn step(&mut self, pose: Point, neutral: Point, dt: f64, c: &Config) -> Point {
-        let axis = |v: f64| {
-            if v.abs() <= c.dead_zone {
-                0.
+    pub fn step(&mut self, pose: Point, _neutral: Point, dt: f64, c: &Config) -> Point {
+        let Some(anchor) = self.anchor.as_mut() else {
+            self.anchor = Some(pose);
+            return Point::default();
+        };
+        // Head displacement, rather than held tilt, drives the pointer. A still head never cruises.
+        let gain = c.max_speed * 2. / c.range;
+        let noise = c.dead_zone * 0.02;
+        let alpha = 1. - (-dt.max(0.) / 0.016).exp();
+        let advance = |value: f64,
+                       anchor: &mut f64,
+                       pending: &mut f64,
+                       remainder: &mut f64,
+                       direction: f64| {
+            let delta = value - *anchor;
+            if delta.abs() > noise {
+                let movement = delta - noise.copysign(delta);
+                *anchor += movement;
+                *pending += movement * gain * direction;
+            }
+            let movement = if pending.abs() < 0.01 {
+                *pending
             } else {
-                v.signum()
-                    * ((v.abs() - c.dead_zone) / (c.range - c.dead_zone))
-                        .clamp(0., 1.)
-                        .powf(2.1)
-                    * c.max_speed
-            }
-        };
-        let raw = Point {
-            x: axis(neutral.x - pose.x),
-            y: axis(pose.y - neutral.y),
-        };
-        let alpha = 1. - (-dt / 0.030).exp();
-        let advance = |velocity: f64, filtered: &mut f64, remainder: &mut f64| {
-            if velocity == 0. || velocity * *filtered < 0. {
-                *filtered = 0.;
-                *remainder = 0.;
-            }
-            *filtered += (velocity - *filtered) * alpha;
-            *remainder += *filtered * dt;
+                *pending * alpha
+            };
+            *pending -= movement;
+            *remainder += movement;
             let step = remainder.trunc();
             *remainder -= step;
             step
         };
         Point {
-            x: advance(raw.x, &mut self.filtered.x, &mut self.remainder.x),
-            y: advance(raw.y, &mut self.filtered.y, &mut self.remainder.y),
+            x: advance(
+                pose.x,
+                &mut anchor.x,
+                &mut self.pending.x,
+                &mut self.remainder.x,
+                -1.,
+            ),
+            y: advance(
+                pose.y,
+                &mut anchor.y,
+                &mut self.pending.y,
+                &mut self.remainder.y,
+                1.,
+            ),
         }
     }
 }
@@ -347,13 +349,11 @@ mod tests {
         assert!(neutral.unwrap().x.abs() < 0.025);
     }
     #[test]
-    fn raw_neutral_stops_pose_filter_without_a_smoothing_tail() {
+    fn crossing_neutral_does_not_snap_the_head_pose() {
         let mut filter = PoseFilter::default();
         filter.update(0., Point { x: 0.3, y: 0.3 }, None, 0.035);
-        assert_eq!(
-            filter.update(60., Point::default(), Some(Point::default()), 0.035),
-            Point::default()
-        );
+        let pose = filter.update(60., Point::default(), Some(Point::default()), 0.035);
+        assert!(pose.x > 0. && pose.x < 0.3);
     }
     #[test]
     fn initial_tracking_requires_deliberate_departure() {
@@ -422,9 +422,12 @@ mod tests {
         let distance = |fps: u32| {
             let mut m = Motion::default();
             (0..fps * 3)
-                .map(|_| {
+                .map(|i| {
                     m.step(
-                        Point { x: -0.16, y: 0. },
+                        Point {
+                            x: -0.16 * i as f64 / (fps * 3 - 1) as f64,
+                            y: 0.,
+                        },
                         Point::default(),
                         1. / fps as f64,
                         &Config::default(),
@@ -434,6 +437,63 @@ mod tests {
                 .sum::<f64>()
         };
         assert!((distance(15) - distance(60)).abs() < 25.);
+    }
+    #[test]
+    fn held_off_center_pose_and_small_tremor_do_not_drift() {
+        let c = Config::default();
+        let mut motion = Motion::default();
+        motion.step(Point::default(), Point::default(), 0.008, &c);
+        let aimed = Point { x: -0.12, y: 0.06 };
+        assert!(motion.step(aimed, Point::default(), 0.008, &c).x > 100.);
+        for _ in 0..24 {
+            motion.step(aimed, Point::default(), 0.008, &c);
+        }
+        for _ in 0..1500 {
+            assert_eq!(
+                motion.step(aimed, Point::default(), 0.008, &c),
+                Point::default()
+            );
+        }
+        let mut still = Motion::default();
+        still.step(aimed, Point::default(), 0.008, &c);
+        for i in 0..1500 {
+            let pose = Point {
+                x: aimed.x + if i % 2 == 0 { 0.0005 } else { -0.0005 },
+                y: aimed.y,
+            };
+            assert_eq!(
+                still.step(pose, Point::default(), 0.008, &c),
+                Point::default()
+            );
+        }
+    }
+    #[test]
+    fn filtered_camera_tremor_still_allows_one_stable_dwell() {
+        let c = Config::default();
+        let mut filter = PoseFilter::default();
+        let mut motion = Motion::default();
+        let mut dwell = Dwell::default();
+        let neutral = Point::default();
+        let mut pose = filter.update(0., neutral, Some(neutral), c.dead_zone);
+        let mut cursor = Point { x: 100., y: 100. };
+        let mut clicks = 0;
+        for i in 0..400 {
+            let now = i as f64 * 8.;
+            if i % 4 == 0 {
+                let raw = Point {
+                    x: if i % 8 == 0 { 0.004 } else { -0.004 },
+                    y: 0.,
+                };
+                pose = filter.update(now, raw, Some(neutral), c.dead_zone);
+            }
+            let delta = motion.step(pose, neutral, 0.008, &c);
+            cursor.x += delta.x;
+            cursor.y += delta.y;
+            if dwell.update(now, cursor, &c) {
+                clicks += 1;
+            }
+        }
+        assert_eq!(clicks, 1);
     }
     #[test]
     fn calibration_requires_stable_time_window() {

@@ -66,7 +66,7 @@ try {
   await update({ transcript: 'Summarize this page', audioLevel: 0.7 });
   await screenshot('listening-dark');
   await page.getByRole('button', { name: 'Stop listening', exact: true }).click();
-  await page.getByRole('button', { name: 'Pause dwell', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop dwell', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Resume dwell', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await page.getByRole('button', { name: 'Resume dwell', exact: true }).click();
   const controls = await page.locator('.composer-pill button:not(.composer-prompt)').evaluateAll((elements: HTMLElement[]) => elements.map((element) => { const rect = element.getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height]; }));

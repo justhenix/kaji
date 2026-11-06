@@ -1,5 +1,6 @@
 pub mod agent_process;
 pub mod assist;
+pub mod composer;
 pub mod control;
 pub mod desktop;
 pub mod diagnostics;

@@ -365,7 +365,7 @@ export class Composer {
     this.voice.setAttribute('aria-pressed', String(listening));
     this.voice.querySelector('i')!.className = listening ? 'ri-mic-fill' : busy ? 'ri-stop-line' : 'ri-mic-line';
     this.dwell.setAttribute('aria-pressed', String(this.dwellEnabled));
-    this.dwell.setAttribute('aria-label', this.dwellEnabled ? 'Pause dwell' : 'Start dwell');
+    this.dwell.setAttribute('aria-label', this.dwellEnabled ? 'Stop dwell' : 'Start dwell');
     const feedback = dwellFeedback({enabled:this.dwellEnabled, dwellEnabled:this.dwellEnabled, dwellReady:this.dwellReady, phase:this.headPhase, reason:this.headReason});
     this.dwell.dataset.ready = String(this.dwellReady && this.dwellEnabled);
     this.dwell.querySelector('.composer-dwell-status')!.textContent = feedback.status;

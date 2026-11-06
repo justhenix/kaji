@@ -45,12 +45,12 @@ try {
   assert(await page.getByRole('textbox',{name:'Your request'}).isVisible(),'Completed reply needs more than one click to start the next request');
   await page.getByRole('button',{name:'Type a request',exact:true}).click();
   for (const [headPhase, dwellReady, expected] of [
-    ['initializing',false,'Starting'], ['calibrating',false,'Calibrate'], ['tracking',false,'Move head'],
-    ['tracking',true,'Ready'], ['mouse',false,'Paused'], ['tracking',false,'Move head'], ['tracking',true,'Ready'],
+    ['initializing',false,'Starting'], ['calibrating',false,'Calibrate'], ['tracking',false,'Aim'],
+    ['tracking',true,'Ready'], ['mouse',false,'Paused'], ['tracking',false,'Aim'], ['tracking',true,'Ready'],
   ] as const) {
     await page.evaluate(({headPhase,dwellReady}: {headPhase:string;dwellReady:boolean}) => window.dispatchEvent(new CustomEvent('kaji:composer-update',{detail:{state:'ready',dwellEnabled:true,headPhase,dwellReady}})),{headPhase,dwellReady});
     assert.equal(await page.locator('.composer-dwell-status').textContent(),expected);
-    assert.equal(await page.getByRole('button',{name:'Pause dwell',exact:true}).getAttribute('aria-pressed'),'true');
+    assert.equal(await page.getByRole('button',{name:'Stop dwell',exact:true}).getAttribute('aria-pressed'),'true');
     if(dwellReady) assert.equal(await page.locator('.agent-mark').getAttribute('data-dwell-check'),'true','Ready confirmation did not reappear after yielding');
     const bounds=await page.locator('.composer-dwell').boundingBox(),copy=await page.locator('.composer-dwell-copy').boundingBox();
     assert(bounds&&copy&&copy.x+copy.width<=bounds.x+bounds.width,'Dwell status overflows its button');

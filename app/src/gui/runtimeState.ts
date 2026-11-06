@@ -17,6 +17,6 @@ export function dwellFeedback(head: Pick<RuntimeSnapshot['head'], 'enabled' | 'd
   if (head.phase === 'no_face') return { status: 'No face', hint: 'Face the camera to resume head control.', failed: false };
   if (head.phase === 'tracking') return head.dwellReady
     ? { status: 'Ready', hint: 'Hold still over a target to click.', failed: false }
-    : { status: 'Move head', hint: 'Move your head to aim, then hold still over a target to click.', failed: false };
+    : { status: 'Aim', hint: 'Aim at a button, link or field. Dwell starts only on recognized controls.', failed: false };
   return { status: 'Starting', hint: 'Waiting for head control.', failed: false };
 }

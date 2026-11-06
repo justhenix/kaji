@@ -38,6 +38,9 @@ use windows::Win32::{
 };
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+fn default_composer_duration() -> u64 {
+    180
+}
 type SpeechCache = Arc<Mutex<HashMap<(String, String, String), Vec<u8>>>>;
 pub const RUNTIME_UPDATE_EVENT: &str = "kaji:runtime-update";
 pub const AUDIO_CONTROL_EVENT: &str = "kaji:audio-control";
@@ -506,6 +509,11 @@ enum NativeCommand {
     },
     ActivateWindow {
         window_id: String,
+    },
+    ComposerControl {
+        placement: crate::composer::Placement,
+        #[serde(default = "default_composer_duration")]
+        seconds: u64,
     },
     CaptureWindow {
         window_id: String,
@@ -1704,6 +1712,15 @@ impl RuntimeManager {
             return Err("task is paused".into());
         }
         match command {
+            NativeCommand::ComposerControl { placement, seconds } => {
+                let app = self
+                    .app
+                    .lock()
+                    .map_err(|_| "app state poisoned")?
+                    .clone()
+                    .ok_or("app unavailable")?;
+                crate::composer::control(&app, placement, seconds)
+            }
             NativeCommand::TaskContext => self.task_context(),
             NativeCommand::SelectExecutor { executor_id } => {
                 if !self.task_context()?["executors"]
@@ -2766,13 +2783,16 @@ impl RuntimeManager {
                 "cameraDeviceId": settings.camera,
             }))?;
             self.gui.toggle_head_control(true)?;
+            self.engine.set_dwell_enabled(true)?;
             if let Ok(mut inner) = self.inner.lock() {
                 inner.snapshot.head.enabled = true;
+                inner.snapshot.head.dwell_enabled = true;
                 inner.snapshot.head.active = false;
                 inner.snapshot.head.phase = "initializing".into();
                 inner.snapshot.head.reason = "Opening camera and waiting for fresh frames".into();
             }
         } else {
+            self.engine.set_dwell_enabled(false)?;
             self.engine.stop_head("Head control disabled")?;
             self.sensor_session
                 .lock()
@@ -2783,6 +2803,9 @@ impl RuntimeManager {
             if let Ok(mut inner) = self.inner.lock() {
                 inner.snapshot.head.enabled = false;
                 inner.snapshot.head.active = false;
+                inner.snapshot.head.dwell_enabled = false;
+                inner.snapshot.head.dwell_ready = false;
+                inner.snapshot.head.dwell_progress = 0.;
                 inner.snapshot.head.phase = "stopped".into();
                 inner.snapshot.head.reason = "Head control is off".into();
             }
@@ -2838,6 +2861,9 @@ impl RuntimeManager {
     }
 
     fn set_dwell(&self, enabled: bool) -> Result<()> {
+        if !enabled {
+            return self.set_head(false);
+        }
         if enabled && self.engine.status()?.phase == "stopped" {
             self.set_head(true)?;
         }

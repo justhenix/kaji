@@ -418,6 +418,7 @@ fn gui_set_view(
     configure_gui_view(&window, &view, &state.get_settings()?, width, height)?;
     let client = window.inner_size().map_err(|error| error.to_string())?;
     let outer = window.outer_size().map_err(|error| error.to_string())?;
+    let position = window.outer_position().map_err(|error| error.to_string())?;
     let hwnd = HWND(window.hwnd().map_err(|error| error.to_string())?.0);
     Ok(WindowMetrics {
         native_caption: unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } & WS_CAPTION.0 as isize != 0,
@@ -425,6 +426,11 @@ fn gui_set_view(
         client_height: client.height,
         outer_width: outer.width,
         outer_height: outer.height,
+        outer_x: position.x,
+        outer_y: position.y,
+        ignores_cursor: unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) }
+            & WS_EX_TRANSPARENT.0 as isize
+            != 0,
     })
 }
 
@@ -436,6 +442,9 @@ struct WindowMetrics {
     client_height: u32,
     outer_width: u32,
     outer_height: u32,
+    outer_x: i32,
+    outer_y: i32,
+    ignores_cursor: bool,
 }
 
 fn remove_composer_frame(hwnd: HWND) -> Result<(), String> {
@@ -555,6 +564,9 @@ fn configure_gui_view(
     height: Option<f64>,
 ) -> Result<(), String> {
     let was_composer = !window.is_resizable().map_err(|e| e.to_string())?;
+    if view != "composer" {
+        kaji_engine::composer::restore(window)?;
+    }
     if view == "composer" {
         let width = width.unwrap_or(472.0);
         let height = height.unwrap_or(92.0);
@@ -968,6 +980,9 @@ fn main() {
                 let close_window = window.clone();
                 let close_gui = gui_mgr.clone();
                 window.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::Focused(true)) {
+                        let _ = kaji_engine::composer::restore(&close_window);
+                    }
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
                         if !close_window.is_resizable().unwrap_or(false) {

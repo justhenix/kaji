@@ -15,6 +15,12 @@ use std::{
 
 const MANUAL_IDLE_MS: f64 = 1500.;
 
+struct HitObservation {
+    point: Point,
+    at: f64,
+    target: Option<crate::uia::DwellTarget>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Session {
     pub id: u64,
@@ -51,6 +57,8 @@ struct State {
     motion: Motion,
     dwell: Dwell,
     dwell_enabled: bool,
+    hit: Option<HitObservation>,
+    dwell_target: Option<crate::uia::DwellTarget>,
     sequence: u64,
     captured: f64,
     motion_at: f64,
@@ -100,6 +108,8 @@ impl State {
             motion: Motion::default(),
             dwell: Dwell::default(),
             dwell_enabled: true,
+            hit: None,
+            dwell_target: None,
             sequence: 0,
             captured: 0.,
             motion_at: 0.,
@@ -139,6 +149,8 @@ impl State {
         self.neutral = None;
         self.dwell = Dwell::default();
         self.motion = Motion::default();
+        self.hit = None;
+        self.dwell_target = None;
         self.manual_until = None;
     }
     fn camera_start_input(&self, signals: &Signals) -> Result<u64> {
@@ -157,6 +169,8 @@ impl State {
         self.motion_at = now;
         self.expected = Some(current);
         self.pending_destination = None;
+        self.hit = None;
+        self.dwell_target = None;
         self.dwell = Dwell::require_departure(current, now);
         self.status.dwell_progress = 0.;
         self.status.dwell_ready = false;
@@ -313,6 +327,15 @@ impl State {
                 .step(self.status.pose?, self.neutral?, dt, &self.config),
         )
     }
+    fn clickable_target(&self, now: f64, point: Point) -> Option<&crate::uia::DwellTarget> {
+        let hit = self.hit.as_ref()?;
+        if !(0. ..=300.).contains(&(now - hit.at)) || hit.point.distance(point) > 2. {
+            return None;
+        }
+        hit.target
+            .as_ref()
+            .filter(|target| target.rect.contains(point))
+    }
 }
 struct Shared {
     state: Mutex<State>,
@@ -325,6 +348,7 @@ struct Shared {
 pub struct Engine {
     shared: Arc<Shared>,
     worker: Option<JoinHandle<()>>,
+    hit_worker: Option<JoinHandle<()>>,
     _input_host: Arc<native::InputHost>,
 }
 impl Engine {
@@ -344,6 +368,38 @@ impl Engine {
             permission,
         });
         let run = shared.clone();
+        let hits = shared.clone();
+        let hit_worker = thread::Builder::new()
+            .name("kaji-dwell-target".into())
+            .spawn(move || {
+                native::dpi_aware();
+                let inspector = crate::uia::Inspector::default();
+                while !hits.shutdown.load(Ordering::SeqCst) {
+                    let query = hits.state.lock().ok().and_then(|s| {
+                        (s.status.phase == "tracking"
+                            && s.dwell_enabled
+                            && s.manual_until.is_none()
+                            && s.dwell.armed())
+                        .then_some((s.status.session, s.manual, s.status.cursor?))
+                    });
+                    if let Some((session, manual, point)) = query {
+                        let at = hits.origin.elapsed().as_secs_f64() * 1000.;
+                        let target = inspector.hit_test(point).ok().flatten();
+                        if let Ok(mut s) = hits.state.lock()
+                            && s.status.session == session
+                            && s.manual == manual
+                            && s.status.phase == "tracking"
+                            && s.status
+                                .cursor
+                                .is_some_and(|current| current.distance(point) <= 2.)
+                        {
+                            s.hit = Some(HitObservation { point, at, target });
+                        }
+                    }
+                    thread::sleep(Duration::from_millis(70));
+                }
+            })
+            .map_err(|e| e.to_string())?;
         let worker = thread::Builder::new()
             .name("kaji-native-executor".into())
             .spawn(move || {
@@ -376,6 +432,7 @@ impl Engine {
         Ok(Self {
             shared,
             worker: Some(worker),
+            hit_worker: Some(hit_worker),
             _input_host: input,
         })
     }
@@ -505,6 +562,9 @@ impl Engine {
         s.status.dwell_ready = s.status.phase == "tracking"
             && s.status.now_ms - s.captured <= 180.
             && s.dwell_enabled
+            && s.status
+                .cursor
+                .is_some_and(|point| s.clickable_target(s.status.now_ms, point).is_some())
             && s.dwell.armed();
         Ok(s.status.clone())
     }
@@ -514,6 +574,9 @@ impl Drop for Engine {
         let _ = self.stop("engine shutdown");
         self.shared.shutdown.store(true, Ordering::SeqCst);
         if let Some(t) = self.worker.take() {
+            let _ = t.join();
+        }
+        if let Some(t) = self.hit_worker.take() {
             let _ = t.join();
         }
     }
@@ -635,6 +698,15 @@ fn tick(shared: &Shared, s: &mut State, now: f64) -> Result<()> {
         s.dwell.suspend(now);
         return Ok(());
     }
+    let target = s
+        .clickable_target(now, actual)
+        .cloned()
+        .filter(|target| native::window_at(actual) == target.hwnd);
+    if target.is_none() || target != s.dwell_target {
+        s.dwell.reset_progress(now, actual, &s.config);
+        s.dwell_target = target;
+        return Ok(());
+    }
     if s.dwell.update(now, actual, &s.config) {
         authorized(shared, s)?;
         native::interactive_desktop()?;
@@ -663,6 +735,31 @@ fn tick(shared: &Shared, s: &mut State, now: f64) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dwell_requires_a_fresh_target_at_the_current_pointer() {
+        let mut s = State::stopped();
+        let point = Point { x: 20., y: 20. };
+        assert!(s.clickable_target(100., point).is_none());
+        s.hit = Some(HitObservation {
+            point,
+            at: 100.,
+            target: Some(crate::uia::DwellTarget {
+                hwnd: 123,
+                runtime_id: vec![1, 2],
+                rect: Rect {
+                    left: 10,
+                    top: 10,
+                    right: 50,
+                    bottom: 50,
+                },
+            }),
+        });
+        assert!(s.clickable_target(200., point).is_some());
+        assert!(s.clickable_target(401., point).is_none());
+        assert!(s.clickable_target(200., Point { x: 24., y: 20. }).is_none());
+        s.hit.as_mut().unwrap().target = None;
+        assert!(s.clickable_target(200., point).is_none());
+    }
     #[test]
     fn camera_warmup_accepts_other_input_but_not_escape_or_cancellation() {
         let mut s = State::stopped();
@@ -755,6 +852,8 @@ mod tests {
         s.status.pose = Some(Point { x: -0.2, y: 0. });
         s.captured = 1000.;
         s.motion_at = 1000.;
+        s.motion
+            .step(Point::default(), Point::default(), 0.008, &s.config);
         s
     }
     #[test]
@@ -764,7 +863,7 @@ mod tests {
             .map(|i| s.advance_motion(1000. + i as f64 * 8.).unwrap().x)
             .collect();
         assert!(steps.iter().filter(|x| **x > 0.).count() >= 4);
-        assert!(steps.iter().all(|x| *x <= s.config.max_speed * 0.008 + 1.));
+        assert!(steps.windows(2).all(|w| w[1] <= w[0]));
         assert!(steps.iter().sum::<f64>() > 0.);
     }
     #[test]
@@ -776,13 +875,12 @@ mod tests {
         assert!(s.advance_motion(1181.).is_none());
     }
     #[test]
-    fn neutral_pose_stops_without_coasting() {
+    fn held_pose_settles_instead_of_continuing_to_drive() {
         let mut s = moving();
-        for i in 1..=7 {
+        for i in 1..=22 {
             s.advance_motion(1000. + i as f64 * 8.);
         }
-        s.status.pose = Some(Point::default());
-        assert_eq!(s.advance_motion(1064.), Some(Point::default()));
+        assert_eq!(s.advance_motion(1180.), Some(Point::default()));
     }
     #[test]
     fn late_sensor_shutdown_preserves_the_original_native_stop_reason() {

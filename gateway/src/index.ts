@@ -67,7 +67,7 @@ export function validate(v: unknown): Record<string, unknown> {
   if (v.top_p !== undefined && (typeof v.top_p !== "number" || v.top_p <= 0 || v.top_p > 1)) throw new Error("Invalid top_p");
   if (v.reasoning_effort !== undefined && !["low", "medium", "high"].includes(v.reasoning_effort)) throw new Error("Invalid reasoning effort");
   if (v.stream_options !== undefined && (!object(v.stream_options) || Object.keys(v.stream_options).some(k => k !== "include_usage") || typeof v.stream_options.include_usage !== "boolean")) throw new Error("Invalid stream options");
-  if (v.tools !== undefined && (!Array.isArray(v.tools) || v.tools.length > 16 || v.tools.some((t: any) => !object(t) || t.type !== "function" || !object(t.function) || !name(t.function.name) || !object(t.function.parameters)))) throw new Error("Only function tools are enabled");
+  if (v.tools !== undefined && (!Array.isArray(v.tools) || v.tools.length > 24 || v.tools.some((t: any) => !object(t) || t.type !== "function" || !object(t.function) || !name(t.function.name) || !object(t.function.parameters)))) throw new Error("Only function tools are enabled");
   if (v.tool_choice !== undefined && !["auto", "none", "required"].includes(v.tool_choice)
     && !(object(v.tool_choice) && v.tool_choice.type === "function" && object(v.tool_choice.function) && name(v.tool_choice.function.name))) throw new Error("Invalid tool choice");
   const { max_completion_tokens: _unused, ...body } = v;

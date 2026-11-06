@@ -9,7 +9,7 @@ import { GATEWAY_MODELS, type GatewayModelId } from '../shared/models';
 
 const NATIVE_TIMEOUT_MS = 30000;
 const MAX_INPUT_LINE = 4 * 1024 * 1024;
-const NATIVE_COMMANDS = new Set(["begin", "inspect", "point", "invoke", "act", "status", "confirm", "pause", "resume", "stop", "task_context", "select_executor", "list_windows", "list_applications", "bind_window", "document_inspect", "document_edit", "document_create", 'activate_window', 'capture_window', 'propose_physical', 'execute_physical']);
+const NATIVE_COMMANDS = new Set(["begin", "inspect", "point", "invoke", "act", "status", "confirm", "pause", "resume", "stop", "task_context", "select_executor", "list_windows", "list_applications", "bind_window", "document_inspect", "document_edit", "document_create", 'activate_window', 'capture_window', 'propose_physical', 'execute_physical', 'composer_control']);
 
 type PendingNative = { taskId: string; command: string; resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 type TaskQuestion = Omit<PendingQuestion, "taskId"> & { nativeConfirmationId?: string; desktopApprovalId?: string; guideCheck?: boolean };
@@ -59,8 +59,13 @@ function validateNativeCommand(value: unknown, sessionId: number | null, confirm
     task_context: ['command'], select_executor: ['command', 'executor_id'], list_windows: ['command'], list_applications: ['command'],
     bind_window: ['command', 'window_id'], document_inspect: ['command'], document_edit: ['command', 'operations'], document_create: ['command', 'blocks'],
     activate_window: ['command','window_id'], capture_window: ['command','window_id'], propose_physical: ['command','capture_id','action'], execute_physical: ['command','approval_id'],
+    composer_control: ['command','placement','seconds'],
   };
   if (Object.keys(value).some(key => !fields[command]!.includes(key))) throw new Error("Native command contains unsupported fields");
+  if (command === 'composer_control') {
+    if (!['aside','left','right','fade','restore'].includes(String(value.placement)) || value.seconds !== undefined && (!Number.isSafeInteger(value.seconds) || value.seconds < 5 || value.seconds > 600)) throw new Error('Invalid composer control');
+    return;
+  }
   if (['task_context', 'list_windows', 'list_applications', 'document_inspect', 'status', 'pause', 'stop'].includes(command)) return;
   if (command === 'select_executor') { if (!validId(value.executor_id)) throw new Error('Invalid executor'); return; }
   if (['bind_window','activate_window','capture_window'].includes(command)) { if (!validId(value.window_id)) throw new Error('Invalid window'); return; }
@@ -128,6 +133,7 @@ class DesktopTransport implements Transport {
     if (pending.command === 'capture_window' && isObject(input.result) && input.result.changedAfterAction === true) this.physicalVerified = true;
     if (pending.command === 'execute_physical' && isObject(input.result)) this.physicalVerified = input.result.verified === true;
     if (pending.command === 'activate_window' && isObject(input.result) && input.result.verified === true) this.physicalVerified = true;
+    if (pending.command === 'composer_control' && isObject(input.result) && input.result.verified === true) this.physicalVerified = true;
     pending.resolve(input.result);
   }
   async close() {

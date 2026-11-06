@@ -76,6 +76,9 @@ describe("gateway trust boundary", () => {
     expect(response.status).toBe(200);
   });
   test("accepts function calls and matching tool history", () => {
+    const tool = {type:'function',function:{name:'composer_control',parameters:{type:'object'}}};
+    expect(() => validate({messages:[{role:'user',content:'Move aside'}],tools:Array(24).fill(tool)})).not.toThrow();
+    expect(() => validate({messages:[{role:'user',content:'Move aside'}],tools:Array(25).fill(tool)})).toThrow();
     expect(validate({ messages: [{ role: "user", content: [{ type: "text", text: "Hello" }] }] }).messages).toEqual([{ role: "user", content: "Hello" }]);
     expect(validate({ messages: [{ role: "assistant", content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "desktop_inspect", arguments: "{}" } }] }, { role: "tool", content: "{}", tool_call_id: "c1" }], tools: [{ type: "function", function: { name: "desktop_inspect", parameters: { type: "object" } } }] }).model).toBe(MODEL);
     expect(() => validate({ messages: [{ role: "tool", content: "missing call ID" }] })).toThrow();

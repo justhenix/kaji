@@ -36,7 +36,7 @@ test('Pi serializes the complete desktop catalog within the deployed gateway con
     const tools=computerTools(native,()=>{}).concat(desktopTools(native,'assist',()=>{},()=>{}));
     const provider=gatewayProvider('a'.repeat(64),`http://127.0.0.1:${server.port}/v1`);
     await(await provider.streamFn(provider.model,normalizeContext({messages:[{role:'user',content:'Inspect the selected task',timestamp:Date.now()}],tools}),{})).result();
-    expect(tools).toHaveLength(16);
+    expect(tools).toHaveLength(17);
     expect(()=>validate(payload)).not.toThrow();
     expect(payload.tools.find((tool:any)=>tool.function.name==='session_status').function.strict).toBe(true);
     expect(payload.tools.some((tool:any)=>tool.function.name==='physical_propose')).toBe(true);

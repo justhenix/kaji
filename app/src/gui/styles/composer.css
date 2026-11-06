@@ -20,6 +20,7 @@ body { overflow: hidden; }
   color: var(--text-primary);
 }
 .composer-stage[data-placement="top"] { top: 12px; bottom: auto; flex-direction: column-reverse; }
+:root[data-obscured="true"] .composer-stage { opacity: .12; pointer-events: none; }
 .composer-pill, .composer-panel {
   background: color-mix(in srgb, var(--surface-card) calc(var(--composer-opacity) * 100%), transparent);
   border: 1px solid var(--border-medium);

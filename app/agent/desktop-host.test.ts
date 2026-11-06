@@ -42,6 +42,7 @@ function setup(script: (turn: number, context: TranscriptContext) => any, manage
       case 'select_executor': return {executor:command.executor_id};
       case 'document_edit': return {id:'artifact-1',name:'result.docx',verification:{bytes:1000,paragraphs:3,tables:0}};
       case 'activate_window': return {executed:true,verified:true,window:{id:command.window_id}};
+      case 'composer_control': return {verified:true,placement:command.placement,clickThrough:command.placement==='fade'};
       case 'execute_physical': return {executed:true,verified:true};
       case 'bind_window': return {window:{id:command.window_id},hwnd:123};
       default: throw new Error(`Unexpected native command: ${command.command}`);
@@ -167,4 +168,16 @@ test('binding a native target selects its executor before opening the session', 
   ]);
   expect(f.output.some(message => message.type === 'update' && message.question)).toBeFalse();
   expect(f.output.find(message => message.type === 'result')).toMatchObject({phase:'complete',verified:true});
+});
+
+test('moving or fading the composer runs without an executor or approval question', async () => {
+  for (const placement of ['aside','left','right','fade','restore']) {
+    const f = setup(turn => turn === 0 ? toolCall('composer_control', {placement,seconds:180}) : [{type:'text',text:'Moved out of your way.'}], true);
+    f.host.dispatch({type:'start',taskId:'composer-1',conversationId:'chat-1',text:'You are in my way',mode:'assist'});
+    await f.pump(() => f.output.some(message => message.type === 'result'));
+    expect(f.output.some(message => message.type === 'update' && message.question)).toBeFalse();
+    expect(f.output.filter(message => message.type === 'native_request' && message.command.command === 'composer_control')).toHaveLength(1);
+    expect(f.output.some(message => message.type === 'native_request' && ['begin','select_executor','act'].includes(String(message.command.command)))).toBeFalse();
+    expect(f.output.find(message => message.type === 'result')).toMatchObject({phase:'complete',verified:true});
+  }
 });

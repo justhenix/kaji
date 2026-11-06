@@ -98,6 +98,9 @@ pub struct Snapshot {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Request {
+    HitTest {
+        point: Point,
+    },
     Inspect {
         hwnd: isize,
     },
@@ -150,6 +153,15 @@ impl Action {
 #[cfg(test)]
 mod action_tests {
     use super::*;
+    #[test]
+    fn dwell_rejects_text_pages_and_unactionable_controls() {
+        for kind in [50020, 50030, 50032, 50033] {
+            assert!(!dwell_control(kind, true, true));
+        }
+        assert!(dwell_control(50000, true, false));
+        assert!(dwell_control(50004, false, true));
+        assert!(!dwell_control(50000, false, false));
+    }
     #[test]
     fn values_and_scroll_are_bounded_before_dispatch() {
         assert!(
@@ -212,9 +224,17 @@ mod action_tests {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Response {
+    HitTarget { target: Option<DwellTarget> },
     Snapshot(Snapshot),
     Element(Element),
     Acted { element: Element, backend: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DwellTarget {
+    pub hwnd: isize,
+    pub runtime_id: Vec<i32>,
+    pub rect: Rect,
 }
 
 pub struct Inspector {
@@ -230,6 +250,17 @@ impl Default for Inspector {
     }
 }
 impl Inspector {
+    pub fn hit_test(&self, point: Point) -> Result<Option<DwellTarget>> {
+        let Response::HitTarget { target } = self.call_checked(
+            Request::HitTest { point },
+            Duration::from_millis(250),
+            || Ok(()),
+        )?
+        else {
+            return Err("invalid hit-test response".into());
+        };
+        Ok(target)
+    }
     pub fn cancel(&self) {
         self.cancel.fetch_add(1, Ordering::SeqCst);
     }
@@ -856,6 +887,113 @@ fn apply_action(
     }
 }
 
+fn dwell_control(control_type: i32, actionable: bool, focusable: bool) -> bool {
+    matches!(
+        control_type,
+        50000
+            | 50002
+            | 50003
+            | 50004
+            | 50005
+            | 50007
+            | 50011
+            | 50013
+            | 50014
+            | 50015
+            | 50016
+            | 50019
+            | 50024
+            | 50027
+            | 50031
+    ) && (actionable || focusable)
+}
+
+fn hit_target(automation: &IUIAutomation, point: Point) -> Result<Option<DwellTarget>> {
+    if !point.x.is_finite() || !point.y.is_finite() {
+        return Err("invalid hit-test point".into());
+    }
+    let hwnd = native::window_at(point);
+    if hwnd == 0 {
+        return Ok(None);
+    }
+    unsafe {
+        let mut element = automation
+            .ElementFromPoint(POINT {
+                x: point.x as i32,
+                y: point.y as i32,
+            })
+            .map_err(|e| e.to_string())?;
+        let root = automation
+            .ElementFromHandle(HWND(hwnd as _))
+            .map_err(|e| e.to_string())?;
+        if !same_or_child(automation, &root, element.clone()) {
+            return Ok(None);
+        }
+        let walker = automation.ControlViewWalker().map_err(|e| e.to_string())?;
+        for _ in 0..6 {
+            if !element
+                .CurrentIsEnabled()
+                .map_err(|e| e.to_string())?
+                .as_bool()
+                || element
+                    .CurrentIsOffscreen()
+                    .map_err(|e| e.to_string())?
+                    .as_bool()
+            {
+                return Ok(None);
+            }
+            let r = element
+                .CurrentBoundingRectangle()
+                .map_err(|e| e.to_string())?;
+            let rect = Rect {
+                left: r.left,
+                top: r.top,
+                right: r.right,
+                bottom: r.bottom,
+            };
+            if !rect.valid() || !rect.contains(point) {
+                return Ok(None);
+            }
+            let kind = element.CurrentControlType().map_err(|e| e.to_string())?.0;
+            let actionable = [
+                UIA_InvokePatternId,
+                UIA_TogglePatternId,
+                UIA_SelectionItemPatternId,
+                UIA_ValuePatternId,
+                UIA_RangeValuePatternId,
+                UIA_ExpandCollapsePatternId,
+            ]
+            .iter()
+            .any(|id| element.GetCurrentPattern(*id).is_ok());
+            if dwell_control(
+                kind,
+                actionable,
+                element
+                    .CurrentIsKeyboardFocusable()
+                    .is_ok_and(|v| v.as_bool()),
+            ) {
+                if native::window_at(point) != hwnd {
+                    return Ok(None);
+                }
+                return Ok(Some(DwellTarget {
+                    hwnd,
+                    runtime_id: runtime_id(&element)?,
+                    rect,
+                }));
+            }
+            // A text label can belong to a button; never promote a page or window into a target.
+            if matches!(kind, 50030 | 50032 | 50033) {
+                return Ok(None);
+            }
+            let Ok(parent) = walker.GetParentElement(&element) else {
+                break;
+            };
+            element = parent;
+        }
+    }
+    Ok(None)
+}
+
 pub(crate) fn execute_with_permission(request: Request, allow_actions: bool) -> Result<Response> {
     if matches!(request, Request::Act { .. }) && !allow_actions {
         return Err("UIA invocation requires --enable-actions".into());
@@ -867,7 +1005,11 @@ pub(crate) fn execute_with_permission(request: Request, allow_actions: bool) -> 
         let automation: IUIAutomation =
             CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)
                 .map_err(|e| format!("UIA unavailable: {e}"))?;
+        if let Request::HitTest { point } = request {
+            return hit_target(&automation, point).map(|target| Response::HitTarget { target });
+        }
         let hwnd = match &request {
+            Request::HitTest { .. } => unreachable!(),
             Request::Inspect { hwnd } => *hwnd,
             Request::Resolve { identity } | Request::Act { identity, .. } => identity.hwnd,
         };

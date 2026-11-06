@@ -15,6 +15,8 @@ const binary = binaryIndex < 0 ? resolve(root, 'src-tauri/target/debug/kaji.exe'
 const output = resolve(root, 'verification');
 const liveDocument = process.argv.includes('--live-document');
 const liveReply = process.argv.includes('--live-reply');
+const liveComposer = process.argv.includes('--live-composer');
+const dwellSmoke = process.argv.includes('--dwell-smoke');
 const isolated = await mkdtemp(join(tmpdir(), 'kaji-desktop-verify-'));
 await mkdir(join(isolated, 'roaming/Kaji'), { recursive: true });
 await mkdir(join(output, 'screenshots'), { recursive: true });
@@ -69,7 +71,10 @@ async function start(live = false): Promise<{ main: Page; pages: Page[] }> {
     catch { return false; }
   }, { timeout: 30_000, message: 'Native WebView2 debugging endpoint did not start' }).toBe(true);
   browser = await chromium.connectOverCDP(endpoint);
-  await expect.poll(() => browser!.contexts().flatMap((context: { pages(): Page[] }) => context.pages()).length, {timeout:10_000}).toBeGreaterThanOrEqual(4);
+  await expect.poll(() => {
+    const pages: Page[] = browser!.contexts().flatMap((context: { pages(): Page[] }) => context.pages());
+    return ['sensor.html','audio.html','overlay.html'].every(host => pages.some(page => page.url().endsWith('/'+host)));
+  }, {timeout:15_000,message:'Native sensor/audio/overlay hosts did not finish navigating'}).toBe(true);
   const pages: Page[] = browser.contexts().flatMap((context: { pages(): Page[] }) => context.pages());
   for (const page of pages) page.on('pageerror', (error: Error) => errors.push(error.message));
   await expect.poll(()=>pages.map((page)=>page.url()).some((url)=>/tauri\.localhost\/(?:index\.html|composer\.html)?(?:\?.*)?$/.test(url))).toBe(true);
@@ -238,6 +243,81 @@ try {
     checks.push('Packaged agent answers a typed composer request with voice and camera disabled');
     await close(main);
   }
+  if (liveComposer) {
+    ({ main } = await start(true));
+    await main.getByRole('button', { name: 'Composer', exact: true }).click();
+    await expect(main).toHaveURL(/composer\.html$/);
+    const positions: number[] = [];
+    for (const [placement, text] of [
+      ['left', 'Move your floating composer to the left edge.'],
+      ['right', 'Move your floating composer to the right edge.'],
+      ['fade', 'Fade your floating composer and make it click-through for exactly 15 seconds.'],
+    ]) {
+      await main.getByRole('button', { name: 'Type a request', exact: true }).click();
+      const editor = main.getByRole('textbox', { name: 'Your request', exact: true });
+      await editor.fill(text!);
+      await editor.press('Enter');
+      await expect.poll(async () => {
+        const state = await invoke<RuntimeSnapshot>(main, 'gui_get_runtime');
+        assert(!state.question, 'Composer control unexpectedly prompted');
+        assert(!state.head.enabled && !state.voice.enabled);
+        if (['error','blocked','stopped'].includes(state.task?.phase ?? '')) throw new Error(state.task?.message);
+        return state.task?.phase;
+      }, {timeout:90_000,intervals:[100,250,500]}).toBe('complete');
+      const metrics = await invoke<{outerX:number;ignoresCursor:boolean}>(main, 'gui_set_view', {view:'composer'});
+      if (placement === 'fade') {
+        assert(metrics.ignoresCursor, 'Fade still intercepts clicks');
+        await expect.poll(() => main.locator('.composer-stage').evaluate((node: HTMLElement) => getComputedStyle(node).opacity)).toBe('0.12');
+        await main.screenshot({path:join(output,'screenshots/native-composer-faded.png')});
+        await expect.poll(() => main.locator('.composer-stage').evaluate((node: HTMLElement) => getComputedStyle(node).opacity), {timeout:18000}).toBe('1');
+        assert.equal((await invoke<{ignoresCursor:boolean}>(main,'gui_set_view',{view:'composer'})).ignoresCursor,false);
+      } else {
+        positions.push(metrics.outerX);
+      }
+      await main.locator('[data-collapse]').click();
+    }
+    assert(positions[1]! > positions[0]!, 'Left/right requests did not move the real window');
+    checks.push('Live typed commands move the native composer left/right and fade click-through, restoring opacity and input automatically');
+    await close(main);
+  }
+  if (dwellSmoke) {
+    const settingsFile = join(isolated, 'roaming/Kaji/settings.json');
+    const settings = await Bun.file(settingsFile).json();
+    await Bun.write(settingsFile, JSON.stringify({...settings,permission_input:true}));
+    ({ main, pages } = await start());
+    const sensor = pages.find(page => page.url().includes('sensor.html'))!;
+    await sensor.evaluate(() => {
+      const state = window as unknown as {kajiTestTracks:MediaStreamTrack[]};
+      state.kajiTestTracks = [];
+      const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = async constraints => {
+        const stream = await getUserMedia(constraints);
+        state.kajiTestTracks.push(...stream.getVideoTracks());
+        return stream;
+      };
+    });
+    for (const delay of [0,1500,-1]) {
+      const started = await invoke<RuntimeSnapshot>(main,'gui_dispatch',{action:{type:delay===1500?'head':'dwell',enabled:true}});
+      assert.equal(started.head.enabled,true); assert.equal(started.head.dwellEnabled,true);
+      if (delay > 0) await Bun.sleep(delay);
+      if (delay < 0) await expect.poll(async () => {
+        const state = await invoke<RuntimeSnapshot>(main,'gui_get_runtime');
+        assert(state.head.enabled, state.head.reason);
+        return ['tracking','calibrating','no_face'].includes(state.head.phase);
+      }, {timeout:15000}).toBe(true);
+      await invoke(main,'gui_dispatch',{action:{type:'dwell',enabled:false}});
+      for (let i=0;i<8;i++) {
+        await Bun.sleep(250);
+        const state = await invoke<RuntimeSnapshot>(main,'gui_get_runtime');
+        assert.equal(state.head.enabled,false); assert.equal(state.head.active,false);
+        assert.equal(state.head.phase,'stopped'); assert.equal(state.head.dwellReady,false);
+        assert.equal(state.head.dwellEnabled,false); assert.equal(state.head.dwellProgress,0);
+      }
+      assert.equal(await sensor.evaluate(() => (window as unknown as {kajiTestTracks:MediaStreamTrack[]}).kajiTestTracks.some(track => track.readyState==='live')),false);
+    }
+    checks.push('Dwell Off stops native head movement, releases camera tracks and survives late startup callbacks');
+    await close(main);
+  }
   if (liveDocument) {
     ({ main } = await start(true));
     await main.getByRole('button', { name: 'Composer', exact: true }).click();
@@ -280,14 +360,14 @@ try {
   }
   assert.deepEqual(errors, []);
   passed = true;
-  console.log(`PASS: ${checks.length} native desktop integration checks; no camera, microphone, or injected input; provider inference ${liveDocument || liveReply ? 'included' : 'disabled'}.`);
+  console.log(`PASS: ${checks.length} native desktop integration checks; camera ${dwellSmoke ? 'startup/stop included' : 'unused'}; microphone unused; provider inference ${liveDocument || liveReply || liveComposer ? 'included' : 'disabled'}.`);
 } catch (error) {
   errors.push(error instanceof Error ? error.message : String(error));
   throw error;
 } finally {
   if (child) { child.kill(); await child.exited; }
   await browser?.close().catch(() => {});
-  await Bun.write(join(output, liveDocument ? 'desktop-live.json' : liveReply ? 'desktop-live-reply.json' : 'desktop-integration.json'), JSON.stringify({ time: new Date().toISOString(), binary, passed, checks, errors, documentEvidence, replyEvidence, nativeExitCode: child?.exitCode, nativeLog: await nativeLog }, null, 2));
+  await Bun.write(join(output, liveComposer || dwellSmoke ? 'desktop-dwell-composer.json' : liveDocument ? 'desktop-live.json' : liveReply ? 'desktop-live-reply.json' : 'desktop-integration.json'), JSON.stringify({ time: new Date().toISOString(), binary, passed, checks, errors, documentEvidence, replyEvidence, nativeExitCode: child?.exitCode, nativeLog: await nativeLog }, null, 2));
   const resolvedTemporary = await realpath(isolated);
   const resolvedParent = await realpath(tmpdir());
   if (!relative(resolvedParent, resolvedTemporary).startsWith('..') && basename(resolvedTemporary).startsWith('kaji-desktop-verify-')) {
