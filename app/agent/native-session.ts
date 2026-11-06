@@ -15,7 +15,24 @@ export type NativeStatus = {
 export type Transport = { request(command: Record<string, unknown>): Promise<any>; close(): Promise<void> };
 
 export class NativeSession {
-  private constructor(private readonly transport: Transport, readonly id: number) {}
+  private constructor(private readonly transport: Transport, public id: number) {}
+  static managed(transport: Transport) { return new NativeSession(transport, 0); }
+  async desktop(command: string, args: Record<string, unknown> = {}) {
+    return this.transport.request({ ...args, command });
+  }
+  async bind(windowId: string, mode: Mode) {
+    const target = await this.desktop('bind_window', { window_id: windowId });
+    this.id = 0;
+    const status: NativeStatus = await this.desktop('begin', { hwnd: target.hwnd, mode });
+    this.id = status.session;
+    return this.request('inspect');
+  }
+  static async attach(session: number, transport: Transport) {
+    if (!Number.isSafeInteger(session) || session <= 0) throw new Error("A valid native session ID is required");
+    const status: NativeStatus = await transport.request({ command: "status" });
+    if (status.session !== session || status.phase === "stopped") throw new Error("Native session is no longer active");
+    return new NativeSession(transport, session);
+  }
   static async open(hwnd: number, enableActions = false, transport: Transport = new DiagnosticClient("kaji-assist", enableActions ? ["--enable-actions"] : []), mode: Mode = "assist") {
     if (!Number.isSafeInteger(hwnd) || hwnd <= 0) { await transport.close(); throw new Error("A current target HWND is required"); }
     try {

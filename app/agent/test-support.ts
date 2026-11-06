@@ -2,7 +2,7 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage, type TranscriptContext } from "@earendil-works/pi-ai";
 
 // A scripted provider exercises Pi's real loop without network inference or credentials.
-export function scriptedStream(step: (context: TranscriptContext, turn: number) => AssistantMessage["content"]): StreamFn {
+export function scriptedStream(step: (context: TranscriptContext, turn: number) => AssistantMessage["content"], stopReason?: AssistantMessage['stopReason']): StreamFn {
   let turn = 0;
   return (model, context) => {
     const stream = createAssistantMessageEventStream();
@@ -11,7 +11,7 @@ export function scriptedStream(step: (context: TranscriptContext, turn: number) 
         const content = step(context, turn++);
         const message: AssistantMessage = {
           role: "assistant", content, api: model.api, provider: model.provider, model: model.id,
-          stopReason: content.some(c => c.type === "toolCall") ? "toolUse" : "stop", timestamp: Date.now(),
+          stopReason: stopReason ?? (content.some(c => c.type === "toolCall") ? "toolUse" : "stop"), timestamp: Date.now(),
           usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
         };
         stream.push({ type: "start", partial: message });

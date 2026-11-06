@@ -2,6 +2,7 @@ export type AgentState = 'ready' | 'listening' | 'thinking' | 'working' | 'quest
 
 const orbit = [0, 1, 2, 5, 8, 7, 6, 3];
 const question = [0, 1, 2, 5, 7];
+const meterThresholds = [0.76, 0.56, 0.86, 0.48, 0.28, 0.59, 0.19, 0.05, 0.26];
 
 export class AgentMark {
   readonly element = document.createElement('span');
@@ -25,11 +26,18 @@ export class AgentMark {
       if (state === 'question') delay = question.includes(i) ? question.indexOf(i) * 110 : null;
       if (state === 'failed') delay = [0, 2, 4, 6, 8].includes(i) ? 0 : null;
       cell.dataset.active = String(delay !== null);
+      cell.dataset.check = String([2, 3, 5, 7].includes(i));
       cell.style.setProperty('--cell-delay', `${delay ?? 0}ms`);
     });
   }
 
   setAudioLevel(level: number): void {
-    this.element.style.setProperty('--audio-level', String(Math.max(0, Math.min(1, level))));
+    const amplitude = (20 * Math.log10(Math.max(0.00001, level)) + 72) / 46;
+    const hasSignal = String(amplitude >= meterThresholds[7]!);
+    if (this.element.dataset.signal !== hasSignal) this.element.dataset.signal = hasSignal;
+    this.element.querySelectorAll<HTMLElement>('.agent-cell').forEach((cell, index) => {
+      const lit = String(amplitude >= meterThresholds[index]!);
+      if (cell.dataset.lit !== lit) cell.dataset.lit = lit;
+    });
   }
 }

@@ -84,6 +84,9 @@
   background: var(--surface-card);
   border: 1.5px solid var(--border-subtle);
   border-radius: 12px;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
   position: relative;
@@ -198,6 +201,9 @@
   background: var(--surface-card);
   border: 1.5px solid var(--border-subtle);
   border-radius: 10px;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
@@ -360,7 +366,7 @@
   font-weight: 300;
 }
 
-.emergency-stop-btn {
+.history-btn {
   margin-left: auto;
 }
 
@@ -372,4 +378,13 @@
   .main-col { gap: 20px; }
   .main-col > .kaji-card { padding: 16px 20px; }
   .position-option { padding: 10px 14px; }
+}
+
+@media (max-width: 760px) {
+  .main-container { padding-inline: 20px; }
+  .main-grid { grid-template-columns: 1fr; gap: 14px; overflow: visible; }
+  .main-col { gap: 14px; }
+  .main-col > .kaji-card:last-child { flex: initial; }
+  .main-footer { flex-wrap: wrap; gap: 4px; }
+  .history-btn { margin-left: 0; }
 }

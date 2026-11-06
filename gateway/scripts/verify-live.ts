@@ -5,7 +5,7 @@ if (!token) throw new Error("Set runtime KAJI_GATEWAY_TOKEN");
 const request = (body: unknown, authorization = `Bearer ${token}`) => fetch(`${url}/chat/completions`, {
   method: "POST", headers: { authorization, "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(65000),
 });
-const body = { model: "minimax-m3.1-flash", messages: [{ role: "user", content: "Reply with exactly KAJI_OK" }], max_tokens: 128, reasoning_effort: "low" };
+const body = { model: "deepseek-v4.1-flash", messages: [{ role: "user", content: "Reply with exactly KAJI_OK" }], max_tokens: 128, reasoning_effort: "low" };
 assert.equal((await request(body, "")).status, 401);
 assert.equal((await request(body, `Bearer ${"x".repeat(64)}`)).status, 401);
 assert.equal((await request({ ...body, model: "not-allowed" })).status, 400);

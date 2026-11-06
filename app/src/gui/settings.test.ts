@@ -10,6 +10,7 @@ test('settings strip removed fields before the strict native IPC boundary', () =
   expect(normalizeSettings({ confirmation_policy: 'auto_review' }).confirmation_policy).toBe('auto_review');
   expect(normalizeSettings({ confirmation_policy: 'always' as never }).confirmation_policy).toBe('auto_review');
   expect(DEFAULT_SETTINGS.confirmation_policy).toBe('auto_review');
+  for (const model of ['ag/gemini-3.8-flash-medium', 'ag/gemini-3.8-flash-high']) expect(normalizeSettings({model}).model).toBe(model);
   expect(normalizeSettings({ response_language: 'English' }).response_language).toBe('English (US)');
   expect(normalizeSettings({ response_language: 'Spanish' }).response_language).toBe('Adaptive');
   expect(normalizeSettings({ recognition_language: 'English' }).recognition_language).toBe('English (US)');

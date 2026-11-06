@@ -1,7 +1,7 @@
 use crate::{
     Result,
     control::Point,
-    native::{self, Hooks, InputLease, Rect, Signals},
+    native::{self, InputHost, Rect, Signals},
     uia::{Action, ElementState, Inspector, Snapshot},
 };
 use serde::{Deserialize, Serialize};
@@ -167,31 +167,30 @@ pub struct Assist {
     inspector: Inspector,
     signals: Arc<Signals>,
     permission: bool,
-    _hooks: Hooks,
-    _lease: Option<InputLease>,
+    _input_host: Arc<InputHost>,
 }
 impl Assist {
     pub fn new(permission: bool) -> Result<Self> {
+        Self::with_input_host(InputHost::new(permission)?)
+    }
+    pub fn with_input_host(input: Arc<InputHost>) -> Result<Self> {
         native::dpi_aware();
-        let lease = if permission {
-            Some(InputLease::acquire()?)
-        } else {
-            None
-        };
-        let signals = Arc::new(Signals::default());
-        let hooks = Hooks::start(signals.clone())?;
+        let signals = input.signals.clone();
+        let permission = input.input_permission;
         Ok(Self {
             state: Mutex::new(State::default()),
             serial: Mutex::new(()),
             inspector: Inspector::default(),
             signals,
             permission,
-            _hooks: hooks,
-            _lease: lease,
+            _input_host: input,
         })
     }
     pub fn begin(&self, hwnd: isize) -> Result<Status> {
         self.begin_at(hwnd, self.status()?.session, Mode::default())
+    }
+    pub fn begin_with_mode(&self, hwnd: isize, mode: Mode) -> Result<Status> {
+        self.begin_at(hwnd, self.status()?.session, mode)
     }
     fn begin_at(&self, hwnd: isize, expected: u64, mode: Mode) -> Result<Status> {
         let _serial = self.serial.lock().map_err(|_| "assist executor poisoned")?;
@@ -326,6 +325,15 @@ impl Assist {
         self.act(session, revision, Action::Invoke {})
     }
     pub fn act(&self, session: u64, revision: u64, action: Action) -> Result<Status> {
+        self.act_reviewed(session, revision, action, None)
+    }
+    pub fn act_reviewed(
+        &self,
+        session: u64,
+        revision: u64,
+        action: Action,
+        policy: Option<crate::review::ReviewPolicy>,
+    ) -> Result<Status> {
         if !self.permission {
             return Err("native actions require --enable-actions".into());
         }
@@ -345,11 +353,31 @@ impl Assist {
             .cursor
             .filter(|c| c.revision == revision)
             .ok_or("intent cursor is missing or superseded")?;
-        if status.mode == Mode::Assist {
+        let review = match policy {
+            None => status.mode == Mode::Assist,
+            Some(crate::review::ReviewPolicy::FullAccess) => false,
+            Some(crate::review::ReviewPolicy::Auto) => true,
+        };
+        if review {
             let element = self.inspector.resolve_checked(&cursor.element_id, || {
                 self.authorize(session, false).map(|_| ())
             })?;
             self.authorize(session, false)?;
+            if matches!(policy, Some(crate::review::ReviewPolicy::Auto))
+                && !crate::review::requires_confirmation(
+                    &action,
+                    &element.name,
+                    &element.automation_id,
+                    element.control_type,
+                )
+            {
+                return self.execute_action(
+                    session,
+                    &cursor.element_id,
+                    action,
+                    Some(element.state()),
+                );
+            }
             let id = format!(
                 "{:?}",
                 unsafe { windows::Win32::System::Com::CoCreateGuid() }.map_err(|e| e.to_string())?
@@ -383,7 +411,7 @@ impl Assist {
         }
         let _serial = self.serial.lock().map_err(|_| "assist executor poisoned")?;
         let status = self.authorize(session, false)?;
-        if status.mode != Mode::Assist || status.inspection_required {
+        if status.mode == Mode::Guide || status.inspection_required {
             return Err("confirmation is unavailable; inspect again".into());
         }
         let pending = {
@@ -424,6 +452,10 @@ impl Assist {
             s.status.last_outcome = Some("unknown".into());
         }
         let foreground = native::foreground();
+        let taskbar_activation = matches!(action, Action::Invoke {})
+            && crate::desktop::is_shell_taskbar(windows::Win32::Foundation::HWND(
+                self.status()?.hwnd as _,
+            ));
         let result = self.inspector.act(element_id, action, expected, || {
             self.authorize(session, false).map(|_| ())
         });
@@ -434,10 +466,16 @@ impl Assist {
             s.status.last_outcome = Some("requested; inspect application state to verify".into());
             s.status.reason = "action requested; inspect application state to verify".into();
         }
-        if result.is_err() && s.status.phase == "active" {
-            s.pause("action outcome unknown; inspect before explicitly resuming");
+        if let Err(error) = &result
+            && s.status.phase == "active"
+        {
+            s.pause(&format!("{error}; inspect before explicitly resuming"));
         }
-        if native::foreground() != foreground && s.status.phase == "active" {
+        if native::foreground() != foreground
+            && native::foreground() != s.status.hwnd
+            && s.status.phase == "active"
+            && !taskbar_activation
+        {
             s.pause("provider changed foreground focus; inspect before resuming");
         }
         drop(s);

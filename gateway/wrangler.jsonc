@@ -6,6 +6,7 @@
   "compatibility_date": "2026-11-02",
   "compatibility_flags": ["enable_request_signal"],
   "workers_dev": true,
+  "vars": { "BAI_VISION_VERIFIED": "deepseek-v4.1-flash", "REASONING_DAILY_REQUEST_CAP": "500" },
   "observability": { "enabled": false },
   "durable_objects": { "bindings": [{ "name": "OWNER_BUDGET", "class_name": "OwnerBudget" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OwnerBudget"] }],

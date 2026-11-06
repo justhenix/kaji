@@ -17,6 +17,7 @@ export interface AppSettings {
   push_to_talk_shortcut: string;
   speaker: string;
   voice_feedback: boolean;
+  speech_voice_id: string;
   sound_effects: boolean;
   response_volume: number;
   recognition_language: string;

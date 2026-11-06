@@ -151,20 +151,55 @@
 
 /* Specific Page Styling */
 
-/* Voice & Audio Meter */
+/* Voice & Audio */
+.voice-settings .kaji-card { padding-block: 16px; }
+.voice-settings .kaji-card-title { margin-bottom: 8px; }
+.voice-device-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(0, 460px);
+  align-items: center;
+  justify-items: end;
+  gap: 8px 16px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--divider);
+}
+.voice-device-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.voice-device-row > label:first-child { justify-self: start; font-size: 13px; font-weight: 550; color: var(--text-primary); }
+.voice-noise-row { border-bottom: 0; padding-bottom: 0; }
+.voice-device-row > .select-field, .voice-controls { min-width: 0; }
+.voice-device-row > .select-field { width: min(290px, 100%); }
+.voice-settings .dropdown-trigger { width: 100%; min-width: 0; }
+.voice-settings .dropdown-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.voice-controls { width: 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; }
+.voice-controls .select-field { width: min(190px, 100%); min-width: 0; }
+.voice-controls .btn-secondary { white-space: nowrap; }
+.voice-sensitivity-row .kaji-slider-wrap { min-width: 0; width: min(230px, 100%); justify-content: flex-end; }
+.voice-sensitivity-row .kaji-slider-wrap > span { min-width: 34px; text-align: right; color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+.voice-fixed-value { color: var(--text-secondary); font-size: 13px; }
+.voice-service-status { margin-top: 10px; color: var(--text-secondary); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.voice-service-status.error { color: var(--text-primary); }
+.voice-settings .settings-row { padding-block: 8px; }
+.voice-settings .kaji-card > .settings-row:only-child { padding-block: 0; }
+@media (max-width: 760px) {
+  .voice-device-row:has(.voice-controls) { grid-template-columns: 1fr; }
+  .voice-device-row { grid-template-columns: minmax(110px, 1fr) minmax(0, 220px); }
+  .voice-controls { justify-content: flex-start; }
+  .voice-device-row > .select-field { width: min(220px, 100%); }
+}
+
 .mic-meter-row {
   display: flex;
   align-items: center;
   gap: 3px;
-  padding: 0 8px;
+  min-height: 22px;
 }
 
 .meter-bar {
   width: 3.5px;
   height: 10px;
-  background: #CBD5E1;
+  background: var(--border-medium);
   border-radius: 2px;
-  transition: background-color 80ms ease, height 80ms ease;
+  transition: background-color 80ms ease;
 }
 
 .meter-bar:nth-child(2) { height: 12px; }
@@ -559,3 +594,26 @@
 .section-heading > i { width: 32px; flex-shrink: 0; font-size: 19px !important; text-align: center; color: var(--text-primary) !important; }
 .split-card-title { font-family: var(--font-body); font-size: 14px; font-weight: 600; line-height: 1.4; }
 .theme-preview.light { background: #FFFFFF; }
+
+.service-card .kaji-card-title { margin-bottom: 10px; }
+.service-list { display: grid; }
+.service-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; min-height: 40px; padding: 10px 0; border-bottom: 1px solid var(--divider); font-size: 12px; }
+.service-row:last-child { border-bottom: 0; }
+.service-row dt { color: var(--text-secondary); font-weight: 550; }
+.service-row dd { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 12px; min-width: 0; text-align: right; }
+.service-value { color: var(--text-primary); overflow-wrap: anywhere; }
+.service-row.unavailable .service-value, .service-quota { color: var(--text-muted); }
+.service-state { padding: 12px 0; color: var(--text-secondary); font-size: 12px; }
+.settings-row-actions { display: flex; align-items: center; gap: 8px; }
+.safety-note { margin: -2px 0 0 46px; color: var(--text-muted); font-size: 11px; }
+.history-settings-row > label { color: var(--text-secondary); font-size: 13px; }
+.history-manage-row { display: flex; justify-content: flex-end; padding-top: 8px; }
+.head-runtime-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.head-runtime-status { min-width: 0; }
+.head-runtime-status p { margin-top: 5px; color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.head-runtime-actions { display: flex; flex: 0 0 auto; gap: 8px; }
+.settings-row .kaji-slider-wrap { min-width: min(320px, 56%); }
+@media (max-width: 680px) {
+  .head-runtime-card { align-items: flex-start; flex-direction: column; }
+  .head-runtime-actions { width: 100%; flex-wrap: wrap; }
+}

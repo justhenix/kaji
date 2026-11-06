@@ -103,6 +103,44 @@ test("Pi tool budget terminates a repeated tool loop", async () => {
   expect(harness.agent.state.messages.filter(m => m.role === "toolResult")).toHaveLength(3);
   await harness.close();
 });
+
+test('empty or truncated model replies cannot mark a task finished', async () => {
+  for (const reason of ['stop', 'length'] as const) {
+    const t = transport(), native = await NativeSession.open(123, false, t.client);
+    const harness = new Harness(native, model, scriptedStream(() => reason === 'length' ? [{type:'text',text:'Done'}] : [], reason));
+    const result = await harness.prompt('Open the requested application');
+    expect(result.state).toBe('error');
+    expect(result.error).toContain('ended before finishing');
+    expect(t.status.actions).toBe(0);
+    await harness.close();
+  }
+});
+
+test('a wrong post-action read is blocked but can recover through fresh inspection without replaying the action', async () => {
+  const t = transport(), native = await NativeSession.open(123, true, t.client);
+  const harness = new Harness(native, model, scriptedStream((_context, turn) =>
+    turn === 0 ? toolCall('cursor_invoke',{revision:1}) : turn === 1 ? toolCall('session_status') : turn === 2 ? toolCall('desktop_inspect') : [{type:'text',text:'Verified the changed application.'}]));
+  const result = await harness.prompt('Invoke once and verify');
+  expect(result.state).toBe('finished');
+  expect(t.calls.filter(call=>call.command==='invoke')).toHaveLength(1);
+  expect(t.calls.filter(call=>call.command==='inspect')).toHaveLength(1);
+  expect(harness.agent.state.messages.some(message=>message.role==='toolResult'&&message.isError)).toBeTrue();
+  await harness.close();
+});
+
+test("question waits do not reset the task tool budget and replies stay on one line", async () => {
+  const t = transport(), native = await NativeSession.open(123, false, t.client);
+  const harness = new Harness(native, model, scriptedStream((_context, turn) => turn === 0
+    ? toolCall("ask_user", { title: "Which screen should I inspect?" })
+    : turn === 1 ? toolCall("session_status") : [{ type: "text", text: "First line\nSecond line" }]), { turns: 10, calls: 1, milliseconds: 10000 }, () => {});
+  expect((await harness.prompt("Inspect the current task")).state).toBe("awaiting_user");
+  expect((await harness.answer("The current screen")).state).toBe("budget_exhausted");
+  await harness.close();
+
+  const cleanTransport = transport(), clean = new Harness(await NativeSession.open(123, false, cleanTransport.client), model, scriptedStream(() => [{ type: "text", text: "First line\nSecond line" }]));
+  expect((await clean.prompt("Report one line")).answer).toBe("First line Second line");
+  await clean.close();
+});
 test("paused Pi task retains transcript and explicitly resumes through inspection", async () => {
   const t = transport(), native = await NativeSession.open(123, false, t.client);
   let turn = 0;

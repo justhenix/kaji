@@ -16,6 +16,18 @@
   src: url('/fonts/inter-latin-wght-normal.woff2') format('woff2');
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 :root {
   color-scheme: light;
   --on-accent: #FFFFFF;
@@ -754,7 +766,7 @@ input:focus-visible + .toggle-slider {
   color: var(--text-secondary);
 }
 
-.about-actions {
+.about-actions, .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
@@ -762,6 +774,7 @@ input:focus-visible + .toggle-slider {
 }
 
 .about-actions a { text-decoration: none; }
+.modal-body p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
 :root[data-accent="purple"] { --kaji-blue: #6D28D9; --kaji-blue-hover: #5520AA; }
 :root[data-accent="pink"] { --kaji-blue: #B41F70; --kaji-blue-hover: #95165B; }
 :root[data-accent="cyan"] { --kaji-blue: #006E86; --kaji-blue-hover: #00576C; }

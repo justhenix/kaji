@@ -1,12 +1,15 @@
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 
-
 use crate::engine::Engine;
+
+fn default_speech_voice_id() -> String {
+    "CwhRBWXzGAHq8TQ4Fs17".into() // ElevenLabs Roger
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -27,6 +30,8 @@ pub struct AppSettings {
     pub push_to_talk_shortcut: String,
     pub speaker: String,
     pub voice_feedback: bool,
+    #[serde(default = "default_speech_voice_id")]
+    pub speech_voice_id: String,
     pub sound_effects: bool,
     pub response_volume: u32,
     pub recognition_language: String,
@@ -109,6 +114,7 @@ impl Default for AppSettings {
             push_to_talk_shortcut: "Ctrl + Space".into(),
             speaker: "Speakers (Realtek Audio)".into(),
             voice_feedback: true,
+            speech_voice_id: default_speech_voice_id(),
             sound_effects: true,
             response_volume: 75,
             recognition_language: "Adaptive".into(),
@@ -147,7 +153,7 @@ impl Default for AppSettings {
             accent_color: "blue".into(),
             composer_position: "floating".into(),
             composer_size: 100,
-            composer_opacity: 90,
+            composer_opacity: 100,
             action_highlight: true,
             cursor_effect: true,
             overlay_style: "subtle".into(),
@@ -188,6 +194,15 @@ impl AppSettings {
         if self.response_volume > 100 {
             return Err("response_volume must be 0-100".into());
         }
+        if self.speech_voice_id.is_empty()
+            || self.speech_voice_id.len() > 128
+            || !self
+                .speech_voice_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err("invalid ElevenLabs voice ID".into());
+        }
         if self.sensitivity > 100 {
             return Err("sensitivity must be 0-100".into());
         }
@@ -197,17 +212,31 @@ impl AppSettings {
         if self.click_behavior != "dwell" && self.click_behavior != "hold" {
             return Err("click_behavior must be dwell or hold".into());
         }
-        if self.ai_provider != "cloud" && self.ai_provider != "local" && self.ai_provider != "custom" {
+        if self.ai_provider != "cloud"
+            && self.ai_provider != "local"
+            && self.ai_provider != "custom"
+        {
             return Err("ai_provider must be cloud, local, or custom".into());
         }
-        if self.response_style != "concise" && self.response_style != "balanced" && self.response_style != "detailed" {
+        if self.response_style != "concise"
+            && self.response_style != "balanced"
+            && self.response_style != "detailed"
+        {
             return Err("response_style must be concise, balanced, or detailed".into());
         }
-        if !matches!(self.model.as_str(), "Kaji Pro" | "Kaji Flash") {
-            return Err("model must be Kaji Pro or Kaji Flash".into());
+        if !matches!(
+            self.model.as_str(),
+            "Kaji Pro" | "Kaji Flash" | "ag/gemini-3.8-flash-medium" | "ag/gemini-3.8-flash-high"
+        ) {
+            return Err("selected model is not enabled".into());
         }
-        if !matches!(self.response_language.as_str(), "English (US)" | "Bahasa Indonesia" | "Adaptive") {
-            return Err("response_language must be English (US), Bahasa Indonesia, or Adaptive".into());
+        if !matches!(
+            self.response_language.as_str(),
+            "English (US)" | "Bahasa Indonesia" | "Adaptive"
+        ) {
+            return Err(
+                "response_language must be English (US), Bahasa Indonesia, or Adaptive".into(),
+            );
         }
         if self.confirmation_policy != "full_access" && self.confirmation_policy != "auto_review" {
             return Err("confirmation_policy must be full_access or auto_review".into());
@@ -218,10 +247,18 @@ impl AppSettings {
         if self.theme != "light" && self.theme != "dark" && self.theme != "system" {
             return Err("theme must be light, dark, or system".into());
         }
-        if self.accent_color != "blue" && self.accent_color != "purple" && self.accent_color != "pink" && self.accent_color != "cyan" && self.accent_color != "green" {
+        if self.accent_color != "blue"
+            && self.accent_color != "purple"
+            && self.accent_color != "pink"
+            && self.accent_color != "cyan"
+            && self.accent_color != "green"
+        {
             return Err("accent_color must be blue, purple, pink, cyan, or green".into());
         }
-        if self.composer_position != "top" && self.composer_position != "floating" && self.composer_position != "taskbar" {
+        if self.composer_position != "top"
+            && self.composer_position != "floating"
+            && self.composer_position != "taskbar"
+        {
             return Err("composer_position must be top, floating, or taskbar".into());
         }
         if !(50..=150).contains(&self.composer_size) {
@@ -230,7 +267,10 @@ impl AppSettings {
         if !(20..=100).contains(&self.composer_opacity) {
             return Err("composer_opacity must be 20-100%".into());
         }
-        if self.overlay_style != "subtle" && self.overlay_style != "clear" && self.overlay_style != "off" {
+        if self.overlay_style != "subtle"
+            && self.overlay_style != "clear"
+            && self.overlay_style != "off"
+        {
             return Err("overlay_style must be subtle, clear, or off".into());
         }
         if self.data_processing != "local" && self.data_processing != "cloud" {
@@ -263,30 +303,48 @@ pub struct GuiManager {
 
 impl GuiManager {
     pub fn new(engine: Arc<Engine>) -> Self {
+        Self::new_with_settings(engine, Self::load_saved_settings())
+    }
+
+    pub fn load_saved_settings() -> AppSettings {
+        let path = get_settings_file_path();
+        load_settings(&path)
+    }
+
+    pub fn new_with_settings(engine: Arc<Engine>, settings: AppSettings) -> Self {
         let settings_path = get_settings_file_path();
-        let mut loaded_settings = if settings_path.exists() {
-            match fs::read_to_string(&settings_path) {
-                Ok(content) => serde_json::from_str::<AppSettings>(&content).unwrap_or_default(),
-                Err(_) => AppSettings::default(),
-            }
-        } else {
-            AppSettings::default()
-        };
-        if loaded_settings.confirmation_policy != "full_access" && loaded_settings.confirmation_policy != "auto_review" {
+        let mut loaded_settings = settings;
+        if loaded_settings.confirmation_policy != "full_access"
+            && loaded_settings.confirmation_policy != "auto_review"
+        {
             loaded_settings.confirmation_policy = "auto_review".into();
         }
-        loaded_settings.model = if loaded_settings.model.starts_with("Kaji Flash") { "Kaji Flash" } else { "Kaji Pro" }.into();
-        for value in [&mut loaded_settings.language, &mut loaded_settings.recognition_language, &mut loaded_settings.response_language] {
+        loaded_settings.model = if matches!(
+            loaded_settings.model.as_str(),
+            "ag/gemini-3.8-flash-medium" | "ag/gemini-3.8-flash-high"
+        ) {
+            loaded_settings.model.clone()
+        } else if loaded_settings.model.starts_with("Kaji Flash") {
+            "Kaji Flash".into()
+        } else {
+            "Kaji Pro".into()
+        };
+        for value in [
+            &mut loaded_settings.language,
+            &mut loaded_settings.recognition_language,
+            &mut loaded_settings.response_language,
+        ] {
             *value = match value.as_str() {
                 "English" | "English (US)" => "English (US)",
                 "Bahasa Indonesia" => "Bahasa Indonesia",
                 _ => "Adaptive",
-            }.into();
+            }
+            .into();
         }
 
         let initial_mode = "assist".to_string();
-        let initial_head = loaded_settings.enable_head_control;
-        let initial_voice = loaded_settings.voice_activation;
+        let initial_head = false;
+        let initial_voice = false;
 
         Self {
             engine,
@@ -298,9 +356,25 @@ impl GuiManager {
             is_paused: Mutex::new(false),
         }
     }
+}
 
+fn load_settings(settings_path: &Path) -> AppSettings {
+    if settings_path.exists() {
+        match fs::read_to_string(settings_path) {
+            Ok(content) => serde_json::from_str::<AppSettings>(&content).unwrap_or_default(),
+            Err(_) => AppSettings::default(),
+        }
+    } else {
+        AppSettings::default()
+    }
+}
+
+impl GuiManager {
     pub fn get_settings(&self) -> Result<AppSettings, String> {
-        let lock = self.settings.lock().map_err(|_| "settings mutex poisoned")?;
+        let lock = self
+            .settings
+            .lock()
+            .map_err(|_| "settings mutex poisoned")?;
         Ok(lock.clone())
     }
 
@@ -312,7 +386,10 @@ impl GuiManager {
         let serialized = serde_json::to_string_pretty(&new_settings).map_err(|e| e.to_string())?;
         fs::write(&self.settings_path, serialized).map_err(|e| e.to_string())?;
 
-        let mut lock = self.settings.lock().map_err(|_| "settings mutex poisoned")?;
+        let mut lock = self
+            .settings
+            .lock()
+            .map_err(|_| "settings mutex poisoned")?;
         *lock = new_settings.clone();
 
         // Sync operational toggles
@@ -328,11 +405,21 @@ impl GuiManager {
 
     pub fn get_status(&self) -> Result<EngineGuiStatus, String> {
         let engine_status = self.engine.status().ok();
-        let phase = engine_status.as_ref().map(|s| s.phase.clone()).unwrap_or_else(|| "ready".into());
-        let reason = engine_status.as_ref().map(|s| s.reason.clone()).unwrap_or_else(|| "Kaji engine ready".into());
+        let phase = engine_status
+            .as_ref()
+            .map(|s| s.phase.clone())
+            .unwrap_or_else(|| "ready".into());
+        let reason = engine_status
+            .as_ref()
+            .map(|s| s.reason.clone())
+            .unwrap_or_else(|| "Kaji engine ready".into());
         let session_id = engine_status.as_ref().map(|s| s.session).unwrap_or(0);
 
-        let mode = self.mode.lock().map(|m| m.clone()).unwrap_or_else(|_| "assist".into());
+        let mode = self
+            .mode
+            .lock()
+            .map(|m| m.clone())
+            .unwrap_or_else(|_| "assist".into());
         let head_control_active = *self.head_control_active.lock().map_err(|_| "poisoned")?;
         let voice_active = *self.voice_active.lock().map_err(|_| "poisoned")?;
         let is_paused = *self.is_paused.lock().map_err(|_| "poisoned")?;
@@ -361,7 +448,7 @@ impl GuiManager {
         let mut h = self.head_control_active.lock().map_err(|_| "poisoned")?;
         *h = enable;
         if !enable {
-            let _ = self.engine.stop("Head control disabled from GUI");
+            let _ = self.engine.stop_head("Head control disabled from GUI");
         }
         Ok(())
     }
@@ -375,7 +462,11 @@ impl GuiManager {
     pub fn pause_all(&self) -> Result<(), String> {
         let mut p = self.is_paused.lock().map_err(|_| "poisoned")?;
         *p = !*p;
-        let _ = self.engine.stop(if *p { "GUI pause all actions" } else { "GUI resume actions" });
+        let _ = self.engine.stop_head(if *p {
+            "GUI pause all actions"
+        } else {
+            "GUI resume actions"
+        });
         Ok(())
     }
 
@@ -427,5 +518,9 @@ mod tests {
         assert!(settings.validate().is_ok());
         settings.model = "legacy".into();
         assert!(settings.validate().is_err());
+        for model in ["ag/gemini-3.8-flash-medium", "ag/gemini-3.8-flash-high"] {
+            settings.model = model.into();
+            assert!(settings.validate().is_ok());
+        }
     }
 }

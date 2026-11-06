@@ -2,6 +2,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { AppSettings, EngineGuiStatus } from './types';
+import type { ConversationRecord, ConversationSummary, RuntimeAction, RuntimeSnapshot } from '../../shared/runtime';
+import { RUNTIME_UPDATE_EVENT } from '../../shared/runtime';
+import { GATEWAY_MODELS } from '../../shared/models';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   // General
@@ -20,6 +23,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   push_to_talk_shortcut: 'Ctrl + Space',
   speaker: 'Speakers (Realtek Audio)',
   voice_feedback: true,
+  speech_voice_id: 'CwhRBWXzGAHq8TQ4Fs17',
   sound_effects: true,
   response_volume: 75,
   recognition_language: 'Adaptive',
@@ -58,7 +62,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   accent_color: 'blue',
   composer_position: 'floating',
   composer_size: 100,
-  composer_opacity: 90,
+  composer_opacity: 100,
   action_highlight: true,
   cursor_effect: true,
   overlay_style: 'subtle',
@@ -85,8 +89,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 let browserStatus: EngineGuiStatus = {
-  phase: 'ready', reason: '', mode: 'assist', head_control_active: DEFAULT_SETTINGS.enable_head_control,
-  voice_active: DEFAULT_SETTINGS.voice_activation, is_paused: false, session_id: 0,
+  phase: 'offline', reason: '', mode: 'assist', head_control_active: false,
+  voice_active: false, is_paused: false, session_id: 0,
 };
 
 function normalizeLanguage(value: string): string {
@@ -101,7 +105,7 @@ export function normalizeSettings(settings: Partial<AppSettings>): AppSettings {
   return {
     ...DEFAULT_SETTINGS,
     ...knownFields,
-    model: settings.model?.startsWith('Kaji Flash') ? 'Kaji Flash' : 'Kaji Pro',
+    model: GATEWAY_MODELS.some(model => model.id === settings.model && model.id.startsWith('ag/')) ? settings.model! : settings.model?.startsWith('Kaji Flash') ? 'Kaji Flash' : 'Kaji Pro',
     confirmation_policy: settings.confirmation_policy === 'full_access' ? 'full_access' : 'auto_review',
     language: normalizeLanguage(settings.language ?? DEFAULT_SETTINGS.language),
     recognition_language: normalizeLanguage(settings.recognition_language ?? DEFAULT_SETTINGS.recognition_language),
@@ -131,8 +135,6 @@ export async function fetchSettings(): Promise<AppSettings> {
 export async function persistSettings(settings: AppSettings): Promise<void> {
   if (!isTauri) {
     localStorage.setItem('kaji_settings', JSON.stringify(settings));
-    browserStatus.head_control_active = settings.enable_head_control;
-    browserStatus.voice_active = settings.voice_activation;
     return;
   }
   await invoke('gui_save_settings', { settings });
@@ -142,31 +144,33 @@ export async function fetchEngineStatus(): Promise<EngineGuiStatus> {
   if (!isTauri) {
     return { ...browserStatus };
   }
-  return await invoke<EngineGuiStatus>('gui_get_engine_status');
+  const runtime = await fetchRuntime();
+  return {
+    phase: runtime.task?.phase ?? (runtime.head.active ? 'doing' : 'ready'),
+    reason: runtime.message || runtime.head.reason || runtime.voice.reason,
+    mode: runtime.mode,
+    head_control_active: runtime.head.enabled,
+    voice_active: runtime.voice.enabled,
+    is_paused: runtime.task?.phase === 'paused' || runtime.head.phase === 'paused',
+    session_id: runtime.head.sessionId,
+  };
 }
 
 export async function setMode(mode: 'guide' | 'assist' | 'agent'): Promise<void> {
-  if (isTauri) {
-    await invoke('gui_set_mode', { mode });
-  } else browserStatus.mode = mode;
+  await dispatchRuntime({ type: 'mode', mode });
 }
 
 export async function toggleHeadControl(enable: boolean): Promise<void> {
-  if (isTauri) {
-    await invoke('gui_toggle_head_control', { enable });
-  } else browserStatus.head_control_active = enable;
+  await dispatchRuntime({ type: 'head', enabled: enable });
 }
 
 export async function toggleVoice(enable: boolean): Promise<void> {
-  if (isTauri) {
-    await invoke('gui_toggle_voice', { enable });
-  } else browserStatus.voice_active = enable;
+  await dispatchRuntime({ type: 'listen', enabled: enable });
 }
 
 export async function pauseAll(): Promise<void> {
-  if (isTauri) {
-    await invoke('gui_pause_all');
-  } else browserStatus.is_paused = !browserStatus.is_paused;
+  const runtime = await fetchRuntime();
+  await dispatchRuntime({ type: runtime.task?.phase === 'paused' || runtime.head.phase === 'paused' ? 'resume' : 'pause', taskId: runtime.task?.id });
 }
 
 export async function emergencyStop(): Promise<void> {
@@ -204,9 +208,7 @@ export async function openGitHub(): Promise<void> {
 }
 
 export async function calibrate(): Promise<void> {
-  if (isTauri) {
-    await invoke('gui_calibrate');
-  }
+  await dispatchRuntime({ type: 'calibrate' });
 }
 
 export async function windowMinimize(label: string): Promise<void> {
@@ -219,6 +221,66 @@ export async function windowClose(label: string): Promise<void> {
   if (isTauri) {
     await invoke('gui_window_close', { label });
   } else await openComposer((await fetchSettings()).composer_size / 100);
+}
+
+export async function dispatchRuntime(action: RuntimeAction): Promise<RuntimeSnapshot> {
+  if (!isTauri) throw new Error('Kaji runtime is unavailable');
+  try {
+    return await invoke<RuntimeSnapshot>('gui_dispatch', { action });
+  } catch (error) {
+    if (typeof error === 'string') {
+      throw new Error(error.includes('gateway credential')
+        ? 'Kaji can’t connect to its AI services. Check AI & Models in Settings.'
+        : error);
+    }
+    throw error;
+  }
+}
+
+export async function fetchRuntime(): Promise<RuntimeSnapshot> {
+  if (!isTauri) throw new Error('Kaji runtime is unavailable');
+  return invoke<RuntimeSnapshot>('gui_get_runtime');
+}
+
+export type RuntimeUnlisten = (() => void) & { ready: Promise<void> };
+
+export function onRuntimeUpdate(callback: (snapshot: RuntimeSnapshot) => void, onInitialError?: (error: unknown) => void): RuntimeUnlisten {
+  let active = true;
+  let revision = -1;
+  let unlistenFn: (() => void) | undefined;
+  const deliver = (snapshot: RuntimeSnapshot) => {
+    if (!active || snapshot.revision <= revision) return;
+    revision = snapshot.revision;
+    callback(snapshot);
+  };
+  const ready = listen<RuntimeSnapshot>(RUNTIME_UPDATE_EVENT, (event) => deliver(event.payload)).then(async (unlisten) => {
+    if (active) unlistenFn = unlisten;
+    else unlisten();
+    if (!active) return;
+    try { deliver(await fetchRuntime()); }
+    catch (error) { if (active) onInitialError?.(error); }
+  }).catch((error) => { if (active) onInitialError?.(error); });
+  const stop = (() => {
+    active = false;
+    unlistenFn?.();
+  }) as RuntimeUnlisten;
+  stop.ready = ready;
+  return stop;
+}
+
+export async function listConversations(query?: string): Promise<ConversationSummary[]> {
+  if (!isTauri) throw new Error('Conversation history is unavailable');
+  return invoke<ConversationSummary[]>('gui_history_list', query ? { query } : {});
+}
+
+export async function getConversation(conversationId: string): Promise<ConversationRecord | null> {
+  if (!isTauri) throw new Error('Conversation history is unavailable');
+  return invoke<ConversationRecord | null>('gui_history_get', { conversationId });
+}
+
+export async function navigateMain(url = 'index.html'): Promise<void> {
+  if (isTauri) await invoke('gui_set_view', { view: 'main' });
+  window.location.href = url;
 }
 
 export function onNavigateSettings(callback: (page: string) => void): () => void {

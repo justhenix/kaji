@@ -107,7 +107,7 @@ export function renderAppearancePage(): HTMLElement {
           <i class="ri-aspect-ratio-line" style="color: var(--kaji-blue); font-size: 18px;"></i>
           <span style="font-size: 13.5px; font-weight: 500; min-width: 40px;">Size</span>
           <div class="kaji-slider-wrap" style="flex: 1;">
-            <input type="range" min="50" max="150" value="${settings.composer_size}" class="kaji-slider" id="app-size-slider" />
+            <input type="range" min="50" max="150" value="${settings.composer_size}" class="kaji-slider" id="app-size-slider" aria-label="Composer size" />
             <div class="slider-val-box" id="app-size-val">${settings.composer_size}%</div>
           </div>
         </div>
@@ -116,7 +116,7 @@ export function renderAppearancePage(): HTMLElement {
           <i class="ri-drop-line" style="color: var(--kaji-blue); font-size: 18px;"></i>
           <span style="font-size: 13.5px; font-weight: 500; min-width: 50px;">Opacity</span>
           <div class="kaji-slider-wrap" style="flex: 1;">
-            <input type="range" min="20" max="100" value="${settings.composer_opacity}" class="kaji-slider" id="app-opacity-slider" />
+            <input type="range" min="20" max="100" value="${settings.composer_opacity}" class="kaji-slider" id="app-opacity-slider" aria-label="Composer opacity" />
             <div class="slider-val-box" id="app-opacity-val">${settings.composer_opacity}%</div>
           </div>
         </div>
@@ -139,7 +139,7 @@ export function renderAppearancePage(): HTMLElement {
             </div>
           </div>
           <label class="toggle-switch">
-            <input type="checkbox" id="app-highlight-toggle" ${settings.action_highlight ? 'checked' : ''} />
+            <input type="checkbox" id="app-highlight-toggle" aria-label="Action highlight" ${settings.action_highlight ? 'checked' : ''} />
             <span class="toggle-slider"></span>
           </label>
         </div>
@@ -153,7 +153,7 @@ export function renderAppearancePage(): HTMLElement {
             </div>
           </div>
           <label class="toggle-switch">
-            <input type="checkbox" id="app-cursor-toggle" ${settings.cursor_effect ? 'checked' : ''} />
+            <input type="checkbox" id="app-cursor-toggle" aria-label="Cursor effect" ${settings.cursor_effect ? 'checked' : ''} />
             <span class="toggle-slider"></span>
           </label>
         </div>

@@ -1,7 +1,7 @@
 use crate::{
     Result,
     control::{Calibration, Config, Dwell, Frame, Motion, Point, PoseFilter},
-    native::{self, Hooks, Rect, Signals},
+    native::{self, Rect, Signals},
 };
 use serde::Serialize;
 use std::{
@@ -12,6 +12,8 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+
+const MANUAL_IDLE_MS: f64 = 1500.;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Session {
@@ -26,6 +28,8 @@ pub struct Status {
     pub frames: u64,
     pub moves: u64,
     pub clicks: u64,
+    pub dwell_progress: f64,
+    pub dwell_ready: bool,
     pub last_click: Option<Point>,
     pub cursor: Option<Point>,
     pub now_ms: f64,
@@ -39,12 +43,14 @@ pub struct Status {
 }
 struct State {
     status: Status,
+    camera_warmup: bool,
     pending: Option<Frame>,
     config: Config,
     neutral: Option<Point>,
     calibration: Calibration,
     motion: Motion,
     dwell: Dwell,
+    dwell_enabled: bool,
     sequence: u64,
     captured: f64,
     motion_at: f64,
@@ -53,6 +59,7 @@ struct State {
     expected: Option<Point>,
     pending_destination: Option<(Point, f64)>,
     manual: u64,
+    manual_until: Option<f64>,
     observer_pulse: u64,
     pulse_seen: f64,
     monitors: Vec<Rect>,
@@ -72,6 +79,8 @@ impl State {
                 frames: 0,
                 moves: 0,
                 clicks: 0,
+                dwell_progress: 0.,
+                dwell_ready: false,
                 last_click: None,
                 cursor: None,
                 now_ms: 0.,
@@ -84,11 +93,13 @@ impl State {
                 operator_center: None,
             },
             pending: None,
+            camera_warmup: false,
             config: Config::default(),
             neutral: None,
             calibration: Calibration::default(),
             motion: Motion::default(),
             dwell: Dwell::default(),
+            dwell_enabled: true,
             sequence: 0,
             captured: 0.,
             motion_at: 0.,
@@ -97,6 +108,7 @@ impl State {
             expected: None,
             pending_destination: None,
             manual: 0,
+            manual_until: None,
             observer_pulse: 0,
             pulse_seen: 0.,
             monitors: vec![],
@@ -108,10 +120,11 @@ impl State {
         }
     }
     fn running(&self) -> bool {
-        self.status.session > 0
+        !self.camera_warmup
+            && self.status.session > 0
             && matches!(
                 self.status.phase.as_str(),
-                "initializing" | "no_face" | "calibrating" | "tracking"
+                "initializing" | "no_face" | "calibrating" | "tracking" | "mouse"
             )
     }
     fn stop(&mut self, reason: &str) {
@@ -121,10 +134,66 @@ impl State {
         self.status.session = self.status.session.wrapping_add(1);
         self.status.phase = "stopped".into();
         self.status.reason = reason.into();
+        self.camera_warmup = false;
         self.pending = None;
         self.neutral = None;
         self.dwell = Dwell::default();
         self.motion = Motion::default();
+        self.manual_until = None;
+    }
+    fn camera_start_input(&self, signals: &Signals) -> Result<u64> {
+        if !self.camera_warmup {
+            return Err("Camera startup was cancelled.".into());
+        }
+        if signals.emergency.load(Ordering::SeqCst) {
+            return Err("Emergency stop interrupted camera startup.".into());
+        }
+        Ok(signals.manual.load(Ordering::SeqCst))
+    }
+    fn yield_to_manual(&mut self, manual: u64, current: Point, now: f64) {
+        self.manual = manual;
+        self.manual_until = Some(now + MANUAL_IDLE_MS);
+        self.motion = Motion::default();
+        self.motion_at = now;
+        self.expected = Some(current);
+        self.pending_destination = None;
+        self.dwell = Dwell::require_departure(current, now);
+        self.status.dwell_progress = 0.;
+        self.status.dwell_ready = false;
+        self.status.cursor = Some(current);
+        self.status.phase = "mouse".into();
+        self.status.reason =
+            "Head control is paused for other input. It resumes after 1.5 seconds idle.".into();
+    }
+    fn manual_input_paused(&mut self, current: Point, now: f64, held: bool) -> bool {
+        let Some(until) = self.manual_until else {
+            return false;
+        };
+        self.expected = Some(current);
+        if held || now < until {
+            if held {
+                self.manual_until = Some(now + MANUAL_IDLE_MS);
+            }
+            self.status.phase = "mouse".into();
+            self.status.reason =
+                "Head control is paused for other input. It resumes after 1.5 seconds idle.".into();
+            return true;
+        }
+        self.manual_until = None;
+        self.motion_at = now;
+        self.motion = Motion::default();
+        self.dwell = Dwell::require_departure(current, now);
+        self.status.phase = if !self.status.operator_visible {
+            "no_face"
+        } else if self.neutral.is_none() {
+            "calibrating"
+        } else {
+            "tracking"
+        }
+        .into();
+        self.status.reason =
+            "Head control resumed. Move your head to aim, then hold still to click.".into();
+        true
     }
     fn accept(&mut self, frame: Frame, now: f64) -> Result<()> {
         if !self.running() || frame.session != self.status.session {
@@ -248,6 +317,7 @@ impl State {
 struct Shared {
     state: Mutex<State>,
     signals: Arc<Signals>,
+    physical: Arc<native::PhysicalArbiter>,
     shutdown: AtomicBool,
     origin: Instant,
     permission: bool,
@@ -255,25 +325,23 @@ struct Shared {
 pub struct Engine {
     shared: Arc<Shared>,
     worker: Option<JoinHandle<()>>,
-    _hooks: Hooks,
-    _input_lease: Option<native::InputLease>,
+    _input_host: Arc<native::InputHost>,
 }
 impl Engine {
     pub fn new(input_permission: bool) -> Result<Self> {
-        native::dpi_aware();
-        let input_lease = if input_permission {
-            Some(native::InputLease::acquire()?)
-        } else {
-            None
-        };
-        let signals = Arc::new(Signals::default());
-        let hooks = Hooks::start(signals.clone())?;
+        Self::with_input_host(native::InputHost::new(input_permission)?)
+    }
+    pub fn with_input_host(input: Arc<native::InputHost>) -> Result<Self> {
+        let signals = input.signals.clone();
+        let physical = input.physical.clone();
+        let permission = input.input_permission;
         let shared = Arc::new(Shared {
             state: Mutex::new(State::stopped()),
             signals,
+            physical,
             shutdown: AtomicBool::new(false),
             origin: Instant::now(),
-            permission: input_permission,
+            permission,
         });
         let run = shared.clone();
         let worker = thread::Builder::new()
@@ -283,10 +351,19 @@ impl Engine {
                 while !run.shutdown.load(Ordering::SeqCst) {
                     if let Ok(mut state) = run.state.lock() {
                         let now = run.origin.elapsed().as_secs_f64() * 1000.;
-                        if state.running()
+                        if state.camera_warmup && now - state.started > 15_000. {
+                            state.stop("Camera startup timed out before the first observation. Start Dwell again.");
+                        } else if state.running()
                             && let Err(reason) = tick(&run, &mut state, now)
                         {
-                            state.stop(&reason);
+                            if reason.starts_with("manual takeover") {
+                                match native::cursor() {
+                                    Ok(current) => state.yield_to_manual(run.signals.manual.load(Ordering::SeqCst), current, now),
+                                    Err(error) => state.stop(&error),
+                                }
+                            } else {
+                                state.stop(&reason);
+                            }
                         }
                     } else {
                         run.signals.emergency.store(true, Ordering::SeqCst);
@@ -299,12 +376,30 @@ impl Engine {
         Ok(Self {
             shared,
             worker: Some(worker),
-            _hooks: hooks,
-            _input_lease: input_lease,
+            _input_host: input,
         })
     }
     pub fn now_ms(&self) -> f64 {
         self.shared.origin.elapsed().as_secs_f64() * 1000.
+    }
+    pub fn input_host(&self) -> Arc<native::InputHost> {
+        self._input_host.clone()
+    }
+    pub fn set_dwell_enabled(&self, enabled: bool) -> Result<()> {
+        let mut state = self
+            .shared
+            .state
+            .lock()
+            .map_err(|_| "native executor state poisoned")?;
+        if state.dwell_enabled != enabled {
+            state.dwell_enabled = enabled;
+            state.dwell = match state.status.cursor {
+                Some(cursor) => Dwell::require_departure(cursor, self.now_ms()),
+                None => Dwell::default(),
+            };
+            state.status.dwell_progress = 0.;
+        }
+        Ok(())
     }
     pub fn sensor_initializing(&self) -> Result<()> {
         let mut state = self
@@ -312,13 +407,16 @@ impl Engine {
             .state
             .lock()
             .map_err(|_| "native executor state poisoned")?;
-        if state.status.session != 0 {
-            return Err("sensor initialization requires a new host".into());
+        if state.status.phase != "stopped" {
+            return Err("sensor initialization requires a stopped session".into());
         }
         state.status.phase = "initializing".into();
+        state.camera_warmup = true;
+        state.started = self.now_ms();
         state.status.reason =
             "opening camera and warming local inference; input is disarmed".into();
         state.manual = self.shared.signals.manual.load(Ordering::SeqCst);
+        self.shared.signals.emergency.store(false, Ordering::SeqCst);
         Ok(())
     }
     pub fn begin(&self, config: Config, target: Option<isize>) -> Result<Session> {
@@ -349,14 +447,12 @@ impl Engine {
             .state
             .lock()
             .map_err(|_| "native executor state poisoned")?;
-        if sensor
-            && (s.status.session != 0
-                || s.status.phase != "initializing"
-                || self.shared.signals.emergency.load(Ordering::SeqCst)
-                || self.shared.signals.manual.load(Ordering::SeqCst) != s.manual)
-        {
-            return Err("sensor initialization cancelled by native stop or manual input".into());
-        }
+        let manual = if sensor {
+            s.camera_start_input(&self.shared.signals)?
+        } else {
+            self.shared.signals.emergency.store(false, Ordering::SeqCst);
+            self.shared.signals.manual.load(Ordering::SeqCst)
+        };
         let id = s.status.session.wrapping_add(1);
         let now = self.now_ms();
         *s = State::stopped();
@@ -370,10 +466,9 @@ impl Engine {
         s.status.phase = "initializing".into();
         s.status.reason = "waiting for a fresh post-initialization camera frame".into();
         s.expected = Some(cursor);
-        s.manual = self.shared.signals.manual.load(Ordering::SeqCst);
+        s.manual = manual;
         s.observer_pulse = self.shared.signals.observer_pulse.load(Ordering::SeqCst);
         s.pulse_seen = now;
-        self.shared.signals.emergency.store(false, Ordering::SeqCst);
         Ok(Session { id, now_ms: now })
     }
     pub fn submit(&self, frame: Frame) -> Result<()> {
@@ -385,6 +480,9 @@ impl Engine {
     }
     pub fn stop(&self, reason: &str) -> Result<Status> {
         self.shared.signals.emergency.store(true, Ordering::SeqCst);
+        self.stop_head(reason)
+    }
+    pub fn stop_head(&self, reason: &str) -> Result<Status> {
         let mut s = self
             .shared
             .state
@@ -401,6 +499,13 @@ impl Engine {
             .lock()
             .map_err(|_| "native executor state poisoned")?;
         s.status.now_ms = self.now_ms();
+        if s.status.phase != "tracking" {
+            s.status.dwell_progress = 0.;
+        }
+        s.status.dwell_ready = s.status.phase == "tracking"
+            && s.status.now_ms - s.captured <= 180.
+            && s.dwell_enabled
+            && s.dwell.armed();
         Ok(s.status.clone())
     }
 }
@@ -421,11 +526,16 @@ fn authorized(shared: &Shared, s: &State) -> Result<()> {
         return Err("emergency stop (Escape or native stop)".into());
     }
     if shared.signals.manual.load(Ordering::SeqCst) != s.manual {
-        return Err("manual takeover; explicit begin required".into());
+        return Err("manual takeover".into());
     }
     Ok(())
 }
 fn tick(shared: &Shared, s: &mut State, now: f64) -> Result<()> {
+    s.status.dwell_progress = 0.;
+    let manual = shared.signals.manual.load(Ordering::SeqCst);
+    if manual != s.manual {
+        s.yield_to_manual(manual, native::cursor()?, now);
+    }
     authorized(shared, s)?;
     let pulse = shared.signals.observer_pulse.load(Ordering::SeqCst);
     if pulse != s.observer_pulse {
@@ -455,6 +565,9 @@ fn tick(shared: &Shared, s: &mut State, now: f64) -> Result<()> {
     }
     let current = native::cursor()?;
     s.status.cursor = Some(current);
+    if s.manual_until.is_some() {
+        s.expected = Some(current);
+    }
     if let Some((destination, sent_at)) = s.pending_destination {
         if current.distance(destination) <= 2. {
             s.expected = Some(current);
@@ -466,7 +579,7 @@ fn tick(shared: &Shared, s: &mut State, now: f64) -> Result<()> {
         }
     }
     if s.expected.is_some_and(|p| p.distance(current) > 3.) {
-        return Err("cursor moved outside native executor; manual takeover".into());
+        s.yield_to_manual(shared.signals.manual.load(Ordering::SeqCst), current, now);
     }
     if let Some(frame) = s.pending.take() {
         if now - frame.captured_ms > 200. {
@@ -476,8 +589,12 @@ fn tick(shared: &Shared, s: &mut State, now: f64) -> Result<()> {
         if s.observe(&frame, current)?.is_none() {
             s.motion_at = now;
             s.dwell.suspend(now);
+            s.manual_input_paused(current, now, native::modifiers_down());
             return Ok(());
         }
+    }
+    if s.manual_input_paused(current, now, native::modifiers_down()) {
+        return Ok(());
     }
     let Some(delta) = s.advance_motion(now) else {
         s.dwell.suspend(now);
@@ -494,7 +611,7 @@ fn tick(shared: &Shared, s: &mut State, now: f64) -> Result<()> {
         )?;
         if next.distance(current) >= 1. {
             authorized(shared, s)?;
-            native::move_to(next, &s.monitors)?;
+            shared.physical.run(|| native::move_to(next, &s.monitors))?;
             s.status.moves += 1;
             s.pending_destination = Some((next, now));
             return Ok(());
@@ -514,11 +631,16 @@ fn tick(shared: &Shared, s: &mut State, now: f64) -> Result<()> {
             return Ok(());
         }
     }
+    if !s.dwell_enabled {
+        s.dwell.suspend(now);
+        return Ok(());
+    }
     if s.dwell.update(now, actual, &s.config) {
         authorized(shared, s)?;
         native::interactive_desktop()?;
         if native::modifiers_down() {
-            return Err("physical button or modifier held; click refused".into());
+            s.yield_to_manual(shared.signals.manual.load(Ordering::SeqCst), actual, now);
+            return Ok(());
         }
         if let Some((hwnd, pid)) = s.target {
             if native::window_pid(hwnd) != pid {
@@ -530,16 +652,102 @@ fn tick(shared: &Shared, s: &mut State, now: f64) -> Result<()> {
             }
         }
         authorized(shared, s)?;
-        native::click()?;
+        shared.physical.run(native::click)?;
         s.status.clicks += 1;
         s.status.last_click = Some(actual);
     }
+    s.status.dwell_progress = s.dwell.progress(&s.config);
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn camera_warmup_accepts_other_input_but_not_escape_or_cancellation() {
+        let mut s = State::stopped();
+        s.camera_warmup = true;
+        s.manual = 4;
+        let signals = Signals::default();
+        signals.manual.store(19, Ordering::SeqCst);
+        assert_eq!(s.camera_start_input(&signals).unwrap(), 19);
+        signals.emergency.store(true, Ordering::SeqCst);
+        assert!(
+            s.camera_start_input(&signals)
+                .unwrap_err()
+                .contains("Emergency stop")
+        );
+        signals.emergency.store(false, Ordering::SeqCst);
+        s.stop("Camera disabled");
+        assert!(
+            s.camera_start_input(&signals)
+                .unwrap_err()
+                .contains("cancelled")
+        );
+    }
+    #[test]
+    fn other_input_yields_without_ending_camera_and_never_resumes_an_old_click() {
+        let mut s = moving();
+        s.status.operator_visible = true;
+        let session = s.status.session;
+        let current = Point::default();
+        s.yield_to_manual(19, current, 1000.);
+        assert!(s.running());
+        assert_eq!(s.status.session, session);
+        assert_eq!(s.status.phase, "mouse");
+        assert!(!s.status.dwell_ready);
+        assert!(s.manual_input_paused(current, 2499., false));
+        assert!(s.manual_input_paused(current, 2600., true));
+        assert!(s.manual_input_paused(current, 4099., false));
+        assert!(s.manual_input_paused(current, 4100., false));
+        assert_eq!(s.status.phase, "tracking");
+        assert!(!s.manual_input_paused(current, 4108., false));
+        assert!(!s.dwell.armed());
+        for i in 1..=100 {
+            assert!(!s.dwell.update(4100. + i as f64 * 40., current, &s.config));
+        }
+        let aimed = Point {
+            x: s.config.dwell_radius * 2. + 1.,
+            y: 0.,
+        };
+        assert!(!s.dwell.update(8140., aimed, &s.config));
+        assert!(s.dwell.armed());
+        let clicks = (1..=100)
+            .filter(|i| s.dwell.update(8140. + *i as f64 * 40., aimed, &s.config))
+            .count();
+        assert_eq!(clicks, 1);
+        assert_eq!(s.status.session, session);
+    }
+    #[test]
+    fn yielding_never_bypasses_emergency_or_observer_guards() {
+        let mut s = moving();
+        s.yield_to_manual(19, Point::default(), 1000.);
+        let signals = Arc::new(Signals::default());
+        signals.manual.store(19, Ordering::SeqCst);
+        signals.observer_alive.store(true, Ordering::SeqCst);
+        let shared = Shared {
+            state: Mutex::new(State::stopped()),
+            signals: signals.clone(),
+            physical: Arc::new(native::PhysicalArbiter::default()),
+            shutdown: AtomicBool::new(false),
+            origin: Instant::now(),
+            permission: false,
+        };
+        assert!(authorized(&shared, &s).is_ok());
+        signals.emergency.store(true, Ordering::SeqCst);
+        assert!(
+            authorized(&shared, &s)
+                .unwrap_err()
+                .contains("emergency stop")
+        );
+        signals.emergency.store(false, Ordering::SeqCst);
+        signals.observer_alive.store(false, Ordering::SeqCst);
+        assert!(
+            authorized(&shared, &s)
+                .unwrap_err()
+                .contains("observer unavailable")
+        );
+    }
     fn moving() -> State {
         let mut s = active();
         s.status.phase = "tracking".into();
@@ -823,6 +1031,7 @@ mod tests {
         let shared = Shared {
             state: Mutex::new(active()),
             signals: Arc::new(Signals::default()),
+            physical: Arc::new(native::PhysicalArbiter::default()),
             shutdown: AtomicBool::new(false),
             origin: Instant::now(),
             permission: true,

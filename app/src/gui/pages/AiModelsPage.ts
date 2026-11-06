@@ -1,214 +1,105 @@
+import type { RuntimeSnapshot, ServiceCapability, ServiceCapabilities } from '../../../shared/runtime';
+import { dispatchRuntime, onRuntimeUpdate } from '../ipc';
 import { LANGUAGE_OPTIONS } from '../types';
 import { store } from '../store';
+import { GATEWAY_MODELS, gatewayModelId } from '../../../shared/models';
+
+type ServiceKey = keyof ServiceCapabilities;
+const services: { key: ServiceKey; label: string }[] = [
+  { key: 'reasoning', label: 'Reasoning' },
+  { key: 'vision', label: 'Screen understanding' },
+  { key: 'stt', label: 'Speech to text' },
+  { key: 'tts', label: 'Spoken feedback' },
+  { key: 'titles', label: 'Conversation titles' },
+];
+
+function renderServices(container: HTMLElement, snapshot: RuntimeSnapshot | null, failed = false): void {
+  const view = container.querySelector<HTMLElement>('#ai-service-state')!;
+  if (failed) {
+    view.innerHTML = '<p class="service-state" role="alert">Could not check service availability.</p>';
+    return;
+  }
+  if (!snapshot?.services) {
+    view.innerHTML = '<p class="service-state" role="status">Service availability is unavailable.</p>';
+    return;
+  }
+  const reason = snapshot.services.reasoning.reason;
+  if (reason?.includes('gateway credential') && Object.values(snapshot.services).every(service => !service.available && service.reason === reason)) {
+    view.innerHTML = '<p class="service-state" role="status">AI services aren’t connected for this Windows account.</p>';
+    return;
+  }
+  const list = document.createElement('dl');
+  list.className = 'service-list';
+  for (const item of services) {
+    const capability = snapshot.services[item.key] as ServiceCapability;
+    const row = document.createElement('div'); row.className = `service-row ${capability.available ? 'available' : 'unavailable'}`;
+    const name = document.createElement('dt'); name.textContent = item.label;
+    const detail = document.createElement('dd');
+    const state = document.createElement('span'); state.className = 'service-value';
+    const activeModel = GATEWAY_MODELS.find(model => model.id === gatewayModelId(store.committedSettings.model))?.label;
+    state.textContent = capability.available ? (item.key === 'reasoning' || item.key === 'vision' ? activeModel ?? capability.model : capability.model) : capability.reason || 'Unavailable';
+    detail.append(state);
+    if (capability.remaining !== undefined) {
+      const quota = document.createElement('span'); quota.className = 'service-quota'; quota.textContent = capability.available ? 'Demo allowance' : 'Unavailable';
+      detail.append(quota);
+    }
+    row.append(name, detail); list.append(row);
+  }
+  view.replaceChildren(list);
+}
 
 export function renderAiModelsPage(): HTMLElement {
+  void dispatchRuntime({ type: 'services.refresh' }).catch(() => {});
   const container = document.createElement('div');
   container.className = 'settings-content';
-
   const settings = store.settings;
-
   container.innerHTML = `
-    <!-- Header -->
     <div class="settings-page-header">
-      <div class="header-icon-box">
-        <i class="ri-stack-line"></i>
-      </div>
-      <div class="header-text-group">
-        <h2 class="header-title">AI & Models</h2>
-
-      </div>
+      <div class="header-icon-box"><i class="ri-stack-line" aria-hidden="true"></i></div>
+      <div class="header-text-group"><h2 class="header-title">AI & Models</h2></div>
     </div>
-
-    <!-- AI Provider Card -->
+    <div class="kaji-card"><div class="settings-row">
+      <div class="settings-row-info"><div class="settings-row-icon"><i class="ri-stack-line" aria-hidden="true"></i></div><label for="ai-model-select">Model</label></div>
+      <select class="kaji-select" id="ai-model-select">
+        ${GATEWAY_MODELS.map(model => `<option value="${model.id === 'deepseek-v4.1-flash' ? 'Kaji Pro' : model.id}" ${gatewayModelId(settings.model) === model.id ? 'selected' : ''}>${model.label}</option>`).join('')}
+      </select>
+    </div></div>
+    <div class="kaji-card service-card">
+      <div class="kaji-card-title">Services</div>
+      <div id="ai-service-state" aria-live="polite"><p class="service-state" role="status">Checking service availability…</p></div>
+    </div>
     <div class="kaji-card">
       <div class="settings-row">
         <div class="settings-row-info">
-          <div class="settings-row-icon"><i class="ri-plug-line"></i></div>
-          <div class="settings-row-text">
-            <div class="settings-row-label">AI provider</div>
-
-          </div>
+          <div class="settings-row-icon"><i class="ri-chat-1-line" aria-hidden="true"></i></div>
+          <div class="settings-row-text"><div class="settings-row-label">Response language</div></div>
         </div>
-        <div class="segmented-control" id="ai-provider-seg">
-          <button class="segmented-btn ${settings.ai_provider === 'cloud' ? 'active' : ''}" data-val="cloud">
-            Cloud
-          </button>
-          <button class="segmented-btn ${settings.ai_provider === 'local' ? 'active' : ''}" data-val="local">
-            Local
-          </button>
-          <button class="segmented-btn ${settings.ai_provider === 'custom' ? 'active' : ''}" data-val="custom">
-            Custom
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Model Card -->
-    <div class="kaji-card">
-      <div class="settings-row">
-        <div class="settings-row-info">
-          <div class="settings-row-icon"><i class="ri-box-3-line"></i></div>
-          <div class="settings-row-text">
-            <div class="settings-row-label">Model</div>
-
-          </div>
-        </div>
-        <select class="kaji-select" id="ai-model-select" style="min-width: 240px;">
-          <option value="Kaji Pro" ${settings.model === 'Kaji Pro' ? 'selected' : ''}>Kaji Pro (Recommended)</option>
-          <option value="Kaji Flash" ${settings.model === 'Kaji Flash' ? 'selected' : ''}>Kaji Flash (Fast)</option>
+        <select class="kaji-select" id="ai-response-language" aria-label="Response language">
+          ${LANGUAGE_OPTIONS.map((language) => `<option value="${language}" ${settings.response_language === language ? 'selected' : ''}>${language}</option>`).join('')}
         </select>
       </div>
-    </div>
-
-    <!-- Capabilities Card with 3 Subcards -->
-    <div class="kaji-card">
-      <div class="kaji-card-title" style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-        <i class="ri-sparkling-line" style="color: var(--kaji-blue); font-size: 18px;"></i>
-        <span>Capabilities</span>
-      </div>
-
-
-      <div class="capabilities-grid">
-        <!-- Capability 1 -->
-        <div class="capability-card ${settings.capabilities_screen ? 'active' : ''}" id="cap-screen-card">
-          <div class="capability-top">
-            <i class="ri-tv-line capability-icon"></i>
-            <label class="toggle-switch">
-              <input type="checkbox" id="cap-screen-toggle" ${settings.capabilities_screen ? 'checked' : ''} />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-          <div>
-            <div class="capability-title">Screen understanding</div>
-
-          </div>
-        </div>
-
-        <!-- Capability 2 -->
-        <div class="capability-card ${settings.capabilities_vision ? 'active' : ''}" id="cap-vision-card">
-          <div class="capability-top">
-            <i class="ri-image-line capability-icon"></i>
-            <label class="toggle-switch">
-              <input type="checkbox" id="cap-vision-toggle" ${settings.capabilities_vision ? 'checked' : ''} />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-          <div>
-            <div class="capability-title">Vision (images)</div>
-
-          </div>
-        </div>
-
-        <!-- Capability 3 -->
-        <div class="capability-card ${settings.capabilities_actions ? 'active' : ''}" id="cap-actions-card">
-          <div class="capability-top">
-            <i class="ri-stack-line capability-icon"></i>
-            <label class="toggle-switch">
-              <input type="checkbox" id="cap-actions-toggle" ${settings.capabilities_actions ? 'checked' : ''} />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-          <div>
-            <div class="capability-title">Computer actions</div>
-
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Response Style Card -->
-    <div class="kaji-card">
-      <div class="settings-row" style="align-items: flex-start;">
-        <div class="settings-row-info">
-          <div class="settings-row-icon"><i class="ri-chat-1-line"></i></div>
-          <div class="settings-row-text">
-            <div class="settings-row-label">Response</div>
-
-          </div>
-        </div>
-
-        <div class="response-controls">
-          <div style="display: flex; align-items: center; justify-content: flex-end; gap: 14px;">
-            <span style="font-size: 13.5px; font-weight: 500;">Response language</span>
-            <select class="kaji-select" id="ai-resp-lang-select" style="min-width: 140px;">
-              ${LANGUAGE_OPTIONS.map((language) => `<option value="${language}" ${settings.response_language === language ? 'selected' : ''}>${language}</option>`).join('')}
-            </select>
-          </div>
-
-          <div style="display: flex; align-items: center; justify-content: flex-end; gap: 14px;">
-            <span style="font-size: 13.5px; font-weight: 500;">Response style</span>
-            <div class="segmented-control" id="ai-resp-style-seg">
-              <button class="segmented-btn ${settings.response_style === 'concise' ? 'active' : ''}" data-val="concise">
-                Concise
-              </button>
-              <button class="segmented-btn ${settings.response_style === 'balanced' ? 'active' : ''}" data-val="balanced">
-                Balanced
-              </button>
-              <button class="segmented-btn ${settings.response_style === 'detailed' ? 'active' : ''}" data-val="detailed">
-                Detailed
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-
-  // Attach event handlers
-  const providerBtns = container.querySelectorAll('#ai-provider-seg .segmented-btn');
-  providerBtns.forEach((btn) => {
-    (btn as HTMLButtonElement).onclick = () => {
-      const val = btn.getAttribute('data-val') as 'cloud' | 'local' | 'custom';
-      store.setDraftField('ai_provider', val);
-      providerBtns.forEach((b) => {
-        const bVal = b.getAttribute('data-val');
-        b.className = `segmented-btn ${bVal === val ? 'active' : ''}`;
-        if (bVal === 'cloud') b.textContent = 'Cloud';
-        if (bVal === 'local') b.textContent = 'Local';
-        if (bVal === 'custom') b.textContent = 'Custom';
-      });
-    };
+    </div>`;
+  container.querySelector<HTMLSelectElement>('#ai-response-language')!.onchange = (event) => {
+    store.setDraftField('response_language', (event.currentTarget as HTMLSelectElement).value);
+  };
+  container.querySelector<HTMLSelectElement>('#ai-model-select')!.onchange = event => {
+    store.setDraftField('model', (event.currentTarget as HTMLSelectElement).value);
+  };
+  let active = true;
+  let revision = -1;
+  const update = (snapshot: RuntimeSnapshot) => {
+    if (!active || snapshot.revision <= revision) return;
+    revision = snapshot.revision;
+    const advertised = snapshot.services?.reasoning.models;
+    if (advertised) for (const option of container.querySelector<HTMLSelectElement>('#ai-model-select')!.options) {
+      option.disabled = advertised.find(model => model.id === gatewayModelId(option.value))?.available === false;
+    }
+    renderServices(container, snapshot);
+  };
+  const unlisten = onRuntimeUpdate(update, () => { if (active) renderServices(container, null, true); });
+  const observer = new MutationObserver(() => {
+    if (!container.isConnected) { active = false; unlisten(); observer.disconnect(); }
   });
-
-  const modelSelect = container.querySelector('#ai-model-select') as HTMLSelectElement;
-  modelSelect.onchange = () => store.setDraftField('model', modelSelect.value);
-
-  const screenToggle = container.querySelector('#cap-screen-toggle') as HTMLInputElement;
-  const screenCard = container.querySelector('#cap-screen-card') as HTMLElement;
-  screenToggle.onchange = () => {
-    store.setDraftField('capabilities_screen', screenToggle.checked);
-    screenCard.className = `capability-card ${screenToggle.checked ? 'active' : ''}`;
-  };
-
-  const visionToggle = container.querySelector('#cap-vision-toggle') as HTMLInputElement;
-  const visionCard = container.querySelector('#cap-vision-card') as HTMLElement;
-  visionToggle.onchange = () => {
-    store.setDraftField('capabilities_vision', visionToggle.checked);
-    visionCard.className = `capability-card ${visionToggle.checked ? 'active' : ''}`;
-  };
-
-  const actionsToggle = container.querySelector('#cap-actions-toggle') as HTMLInputElement;
-  const actionsCard = container.querySelector('#cap-actions-card') as HTMLElement;
-  actionsToggle.onchange = () => {
-    store.setDraftField('capabilities_actions', actionsToggle.checked);
-    actionsCard.className = `capability-card ${actionsToggle.checked ? 'active' : ''}`;
-  };
-
-  const respLangSelect = container.querySelector('#ai-resp-lang-select') as HTMLSelectElement;
-  respLangSelect.onchange = () => store.setDraftField('response_language', respLangSelect.value);
-
-  const styleBtns = container.querySelectorAll('#ai-resp-style-seg .segmented-btn');
-  styleBtns.forEach((btn) => {
-    (btn as HTMLButtonElement).onclick = () => {
-      const val = btn.getAttribute('data-val') as 'concise' | 'balanced' | 'detailed';
-      store.setDraftField('response_style', val);
-      styleBtns.forEach((b) => {
-        const bVal = b.getAttribute('data-val');
-        b.className = `segmented-btn ${bVal === val ? 'active' : ''}`;
-        b.textContent = `${bVal?.charAt(0).toUpperCase()}${bVal?.slice(1)}`;
-      });
-    };
-  });
-
+  observer.observe(document.getElementById('app')!, { childList: true, subtree: true });
   return container;
 }

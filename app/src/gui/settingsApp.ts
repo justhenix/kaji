@@ -95,10 +95,10 @@ function renderApp(): void {
   saveBtn.textContent = 'Save changes';
   saveBtn.onclick = async () => {
     saveBtn.disabled = true;
-    saveBtn.innerHTML = `<i class="ri-loader-4-line"></i> Saving...`;
+    saveBtn.innerHTML = `<i class="ri-loader-4-line" aria-hidden="true"></i> Saving...`;
     try {
       await store.saveDraft();
-      saveBtn.innerHTML = `<i class="ri-check-line"></i> Saved`;
+      saveBtn.innerHTML = `<i class="ri-check-line" aria-hidden="true"></i> Saved`;
       setTimeout(() => {
         saveBtn.innerHTML = `Save changes`;
         saveBtn.disabled = false;

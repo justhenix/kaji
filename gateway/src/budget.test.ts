@@ -24,3 +24,19 @@ test("late release cannot unlock a newer in-flight request", async () => {
   await budget.fetch(new Request("https://budget/release", { method: "POST", body: first.lease }));
   expect((await acquire()).status).toBe("busy");
 });
+
+test('configured demo allowance preserves usage and remains bounded', async () => {
+  const now = Date.now();
+  let value: unknown = {day:Math.floor(now/86400000),count:200,lease:null,expires:0};
+  const storage: Storage = {get:async<T>()=>structuredClone(value) as T|undefined,put:async(_key,v)=>{value=structuredClone(v)},transaction:async callback=>callback(storage)};
+  const budget = new OwnerBudget({storage},{REASONING_DAILY_REQUEST_CAP:'500'});
+  const status = await (await budget.fetch(new Request('https://budget/status'))).json() as any;
+  expect(status).toMatchObject({used:200,limit:500,remaining:300});
+  expect((await (await budget.fetch(new Request('https://budget/acquire',{method:'POST'}))).json() as any).status).toBe('allowed');
+  expect((value as any).count).toBe(201);
+  for (const configured of ['100000','Infinity','499.5','0','invalid']) {
+    const guarded = new OwnerBudget({storage},{REASONING_DAILY_REQUEST_CAP:configured});
+    expect((await (await guarded.fetch(new Request('https://budget/status'))).json() as any).limit).toBe(200);
+  }
+  expect(reserve({day:Math.floor(now/86400000),count:500,lease:null,expires:0},now,'next',500).status).toBe('daily_limit');
+});

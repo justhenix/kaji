@@ -78,7 +78,8 @@ impl PoseFilter {
     ) -> Point {
         let dt = (now - self.time).max(0.);
         let mut value = if let Some(previous) = self.value.filter(|_| dt <= 1000.) {
-            let alpha = 1. - (-dt / 120.).exp();
+            let smoothing_ms = if neutral.is_some() { 60. } else { 120. };
+            let alpha = 1. - (-dt / smoothing_ms).exp();
             Point {
                 x: previous.x + (raw.x - previous.x) * alpha,
                 y: previous.y + (raw.y - previous.y) * alpha,
@@ -91,6 +92,12 @@ impl PoseFilter {
                 value.x = neutral.x;
             }
             if (raw.y - neutral.y).abs() <= dead_zone {
+                value.y = neutral.y;
+            }
+            if (value.x - neutral.x) * (raw.x - neutral.x) < 0. {
+                value.x = neutral.x;
+            }
+            if (value.y - neutral.y) * (raw.y - neutral.y) < 0. {
                 value.y = neutral.y;
             }
         }
@@ -161,7 +168,7 @@ impl Motion {
                 v.signum()
                     * ((v.abs() - c.dead_zone) / (c.range - c.dead_zone))
                         .clamp(0., 1.)
-                        .powf(1.8)
+                        .powf(2.1)
                     * c.max_speed
             }
         };
@@ -169,26 +176,22 @@ impl Motion {
             x: axis(neutral.x - pose.x),
             y: axis(pose.y - neutral.y),
         };
-        let alpha = 1. - (-dt / 0.065).exp();
-        self.filtered.x = if raw.x == 0. {
-            0.
-        } else {
-            self.filtered.x + (raw.x - self.filtered.x) * alpha
+        let alpha = 1. - (-dt / 0.030).exp();
+        let advance = |velocity: f64, filtered: &mut f64, remainder: &mut f64| {
+            if velocity == 0. || velocity * *filtered < 0. {
+                *filtered = 0.;
+                *remainder = 0.;
+            }
+            *filtered += (velocity - *filtered) * alpha;
+            *remainder += *filtered * dt;
+            let step = remainder.trunc();
+            *remainder -= step;
+            step
         };
-        self.filtered.y = if raw.y == 0. {
-            0.
-        } else {
-            self.filtered.y + (raw.y - self.filtered.y) * alpha
-        };
-        self.remainder.x += self.filtered.x * dt;
-        self.remainder.y += self.filtered.y * dt;
-        let step = Point {
-            x: self.remainder.x.trunc(),
-            y: self.remainder.y.trunc(),
-        };
-        self.remainder.x -= step.x;
-        self.remainder.y -= step.y;
-        step
+        Point {
+            x: advance(raw.x, &mut self.filtered.x, &mut self.remainder.x),
+            y: advance(raw.y, &mut self.filtered.y, &mut self.remainder.y),
+        }
     }
 }
 
@@ -210,6 +213,15 @@ impl Dwell {
     }
     pub fn update(&mut self, now: f64, actual: Point, config: &Config) -> bool {
         self.update_allowed(now, actual, config, true)
+    }
+    pub fn progress(&self, config: &Config) -> f64 {
+        if !self.armed() {
+            return 0.;
+        }
+        ((self.last - self.since) / config.dwell_ms.max(1) as f64).clamp(0., 1.)
+    }
+    pub fn armed(&self) -> bool {
+        !self.clicked && self.anchor.is_some()
     }
     pub fn suspend(&mut self, now: f64) {
         self.since += (now - self.last).max(0.);

@@ -7,6 +7,30 @@ const env = (): Env => ({ BAI_API_KEY: "upstream-secret", GATEWAY_TOKEN_SHA256: 
 const request = (body: unknown = { messages: [{ role: "user", content: "Hello" }] }, extra: RequestInit = {}) => new Request("https://gateway.test/v1/chat/completions", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body), ...extra });
 const json: Upstream = (async () => Response.json({ choices: [{ message: { content: "Hello" } }] })) as Upstream;
 describe("gateway trust boundary", () => {
+  test('routes only explicit Gemini variants to the configured router with its own credential and effort', async () => {
+    for (const effort of ['medium', 'high']) {
+      let calls = 0;
+      const response = await handle(request({ model: `ag/gemini-3.8-flash-${effort}`, reasoning_effort: 'low', messages: [{role:'user',content:'Hello'}] }), {
+        ...env(), NINE_ROUTER_API_KEY: 'router-test-key', NINE_ROUTER_BASE_URL: 'https://router.test/v1',
+      }, async (url, init) => {
+        calls++;
+        expect(url).toBe('https://router.test/v1/chat/completions');
+        expect(new Headers(init!.headers).get('authorization')).toBe('Bearer router-test-key');
+        expect(JSON.parse(String(init!.body))).toMatchObject({model:`ag/gemini-3.8-flash-${effort}`,reasoning_effort:effort,parallel_tool_calls:false});
+        expect(init!.redirect).toBe('manual');
+        return Response.json({choices:[{message:{content:'OK'}}]});
+      });
+      expect(response.status).toBe(200);
+      await response.text();
+      expect(calls).toBe(1);
+    }
+    let calls = 0;
+    for (const base of ['', 'http://router.test/v1', 'https://user:secret@router.test/v1', 'https://router.test/v1?secret=x']) {
+      const response = await handle(request({ model:'ag/gemini-3.8-flash-high', messages:[{role:'user',content:'Hello'}] }), {...env(),NINE_ROUTER_API_KEY:'router-test-key',NINE_ROUTER_BASE_URL:base}, async()=>{calls++;return Response.json({});});
+      expect(response.status).toBe(503);
+    }
+    expect(calls).toBe(0);
+  });
   test("requires runtime authentication and fails closed without secrets", async () => {
     expect((await handle(request(undefined, { headers: { "content-type": "application/json" } }), env(), json)).status).toBe(401);
     expect((await handle(request(undefined, { headers: { authorization: `Bearer ${"b".repeat(40)}`, "content-type": "application/json" } }), env(), json)).status).toBe(401);
@@ -29,8 +53,27 @@ describe("gateway trust boundary", () => {
   test("rejects browser calls, oversized chunked bodies and nontext content", async () => {
     const r = request(); r.headers.set("origin", "https://kaji.henix.my.id");
     expect((await handle(r, env(), json)).status).toBe(403);
-    expect((await handle(request({ messages: [{ role: "user", content: "a".repeat(262144) }] }), env(), json)).status).toBe(413);
+    expect((await handle(request({ messages: [{ role: "user", content: "a".repeat(2 * 1024 * 1024) }] }), env(), json)).status).toBe(413);
     expect((await handle(request({ messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "https://private.test" } }] }] }), env(), json)).status).toBe(400);
+  });
+  test("accepts only bounded inline user images for multimodal requests", () => {
+    const image = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=";
+    expect(validate({ messages: [{ role: "user", content: [{ type: "text", text: "Read this" }, { type: "image_url", image_url: { url: image } }] }] }).messages).toHaveLength(1);
+    for (const url of ["https://example.com/image.png", "data:image/svg+xml;base64,PHN2Zy8+", `data:image/png;base64,${"A".repeat(512 * 1024 + 4)}`]) {
+      expect(() => validate({ messages: [{ role: "user", content: [{ type: "image_url", image_url: { url } }] }] })).toThrow();
+    }
+    expect(() => validate({ messages: [{ role: "assistant", content: [{ type: "image_url", image_url: { url: image } }] }] })).toThrow();
+  });
+  test("forwards validated inline images to fixed B.AI endpoint without enabling vision capability", async () => {
+    const image = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=";
+    const payload = { messages: [{ role: "user", content: [{ type: "text", text: "Read this window" }, { type: "image_url", image_url: { url: image } }] }] };
+    const response = await handle(request(payload), env(), async (url, init) => {
+      expect(url).toBe("https://api.b.ai/v1/chat/completions");
+      const forwarded = JSON.parse(init!.body as string);
+      expect(forwarded.messages[0].content[1].image_url.url).toBe(image);
+      return Response.json({ choices: [{ message: { content: "Text in window" } }] });
+    });
+    expect(response.status).toBe(200);
   });
   test("accepts function calls and matching tool history", () => {
     expect(validate({ messages: [{ role: "user", content: [{ type: "text", text: "Hello" }] }] }).messages).toEqual([{ role: "user", content: "Hello" }]);

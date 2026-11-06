@@ -1,11 +1,20 @@
+pub mod agent_process;
 pub mod assist;
 pub mod control;
+pub mod desktop;
 pub mod diagnostics;
+pub mod document_worker;
 pub mod engine;
 pub mod face;
-pub mod native;
-pub mod uia;
+pub mod gateway_client;
 pub mod gui;
+pub mod history;
+pub mod native;
+pub mod overlay;
+pub mod review;
+pub mod runtime;
+pub mod sensor;
+pub mod uia;
 
 pub type Result<T> = std::result::Result<T, String>;
 

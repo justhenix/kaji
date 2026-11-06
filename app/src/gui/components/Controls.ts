@@ -13,6 +13,11 @@ export function prepareControls(root: HTMLElement): void {
     if (heading.querySelector('.split-card-title')) heading.classList.add('section-heading');
   });
   root.querySelectorAll('i').forEach((icon) => icon.setAttribute('aria-hidden', 'true'));
+  root.querySelectorAll<HTMLInputElement>('input').forEach((input) => {
+    if (input.hasAttribute('aria-label') || input.hasAttribute('aria-labelledby') || [...input.labels ?? []].some(label => label.textContent?.trim())) return;
+    const label = input.closest('.settings-row')?.querySelector('.settings-row-label')?.textContent?.trim();
+    if (label) input.setAttribute('aria-label', label);
+  });
   root.querySelectorAll<HTMLSelectElement>('select.kaji-select').forEach((select) => {
     if (!select.closest('.select-field')) createDropdown(select);
   });

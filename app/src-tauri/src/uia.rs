@@ -629,9 +629,10 @@ fn read_element(
             enabled,
             offscreen,
             supports_invoke: !password
-                && element
+                && (element
                     .GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId)
-                    .is_ok(),
+                    .is_ok()
+                    || taskbar_slot(automation, element, base).is_some()),
             supports_set_value: !password
                 && element
                     .GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
@@ -704,6 +705,46 @@ fn read_element(
 pub fn execute(request: Request) -> Result<Response> {
     execute_with_permission(request, false)
 }
+fn taskbar_slot(
+    automation: &IUIAutomation,
+    element: &IUIAutomationElement,
+    identity: &Identity,
+) -> Option<u8> {
+    unsafe {
+        let hwnd = HWND(identity.hwnd as _);
+        if !crate::desktop::is_shell_taskbar(hwnd) {
+            return None;
+        }
+        let mut class = [0u16; 64];
+        let length = GetClassNameW(hwnd, &mut class).max(0) as usize;
+        if String::from_utf16_lossy(&class[..length]) != "Shell_TrayWnd" {
+            return None;
+        }
+        if element.CurrentClassName().ok()? != "Taskbar.TaskListButtonAutomationPeer" {
+            return None;
+        }
+        let walker = automation.ControlViewWalker().ok()?;
+        let parent = walker.GetParentElement(element).ok()?;
+        let mut child = walker.GetFirstChildElement(&parent).ok()?;
+        let mut slot = 0u8;
+        for _ in 0..128 {
+            if child.CurrentClassName().ok()? == "Taskbar.TaskListButtonAutomationPeer"
+                && child
+                    .CurrentAutomationId()
+                    .ok()?
+                    .to_string()
+                    .starts_with("Appid: ")
+            {
+                slot = slot.checked_add(1)?;
+                if automation.CompareElements(element, &child).ok()?.as_bool() {
+                    return (slot <= 10).then_some(slot);
+                }
+            }
+            child = walker.GetNextSiblingElement(&child).ok()?;
+        }
+        None
+    }
+}
 fn invoke_pushbutton(element: &IUIAutomationElement, identity: &Identity) -> Result<bool> {
     unsafe {
         let Ok(hwnd) = element.CurrentNativeWindowHandle() else {
@@ -749,6 +790,7 @@ fn invoke_pushbutton(element: &IUIAutomationElement, identity: &Identity) -> Res
     }
 }
 fn apply_action(
+    automation: &IUIAutomation,
     element: &IUIAutomationElement,
     identity: &Identity,
     current: &Element,
@@ -772,9 +814,15 @@ fn apply_action(
                 if current.control_type == 50000 && invoke_pushbutton(element, identity)? {
                     return Ok("win32_pushbutton_notification");
                 }
-                element.GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId)
-                    .and_then(|p| p.Invoke()).map_err(|e| format!("UIA Invoke failed: {e}"))?;
-                Ok("uia_invoke")
+                if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId) {
+                    pattern.Invoke().map_err(|e| format!("UIA Invoke failed: {e}"))?;
+                    Ok("uia_invoke")
+                } else if let Some(slot) = taskbar_slot(automation, element, identity) {
+                    native::activate_taskbar_slot(slot)?;
+                    Ok("taskbar_activation_shortcut")
+                } else {
+                    Err("control no longer supports independent activation; inspect again".into())
+                }
             }
             Action::SetValue { value } if current.supports_set_value => {
                 let pattern = element.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId).map_err(|e| e.to_string())?;
@@ -891,7 +939,8 @@ pub(crate) fn execute_with_permission(request: Request, allow_actions: bool) -> 
                         {
                             return Err("approved target changed; inspect and confirm again".into());
                         }
-                        let backend = apply_action(&element, identity, &current, action)?;
+                        let backend =
+                            apply_action(&automation, &element, identity, &current, action)?;
                         return Ok(Response::Acted {
                             element: current,
                             backend: backend.into(),
