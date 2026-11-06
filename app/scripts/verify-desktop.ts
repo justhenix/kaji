@@ -8,10 +8,14 @@ import { chromium, expect, type Browser, type Page } from '../../web/node_module
 import { DEFAULT_SETTINGS } from '../src/gui/ipc';
 import { SETTINGS_CATEGORIES } from '../src/gui/types';
 import type { RuntimeSnapshot } from '../shared/runtime';
+import { GATEWAY_MODELS } from '../shared/models';
 
 const root = resolve(import.meta.dir, '..');
 const binaryIndex = process.argv.indexOf('--binary');
 const binary = binaryIndex < 0 ? resolve(root, 'src-tauri/target/debug/kaji.exe') : resolve(process.argv[binaryIndex + 1]);
+const modelIndex = process.argv.indexOf('--model');
+const selectedModel = modelIndex < 0 ? DEFAULT_SETTINGS.model : process.argv[modelIndex + 1]!;
+assert(selectedModel === DEFAULT_SETTINGS.model || GATEWAY_MODELS.some(model => model.id === selectedModel));
 const output = resolve(root, 'verification');
 const liveDocument = process.argv.includes('--live-document');
 const liveReply = process.argv.includes('--live-reply');
@@ -21,7 +25,7 @@ const isolated = await mkdtemp(join(tmpdir(), 'kaji-desktop-verify-'));
 await mkdir(join(isolated, 'roaming/Kaji'), { recursive: true });
 await mkdir(join(output, 'screenshots'), { recursive: true });
 await Bun.write(join(isolated, 'roaming/Kaji/settings.json'), JSON.stringify({
-  ...DEFAULT_SETTINGS, startup_open: 'mainWindow', theme: 'dark',
+  ...DEFAULT_SETTINGS, model: selectedModel, startup_open: 'mainWindow', theme: 'dark',
   permission_input: false, enable_head_control: false,
   voice_feedback: false, voice_activation: false,
 }));
@@ -376,7 +380,8 @@ try {
 } finally {
   if (child) { child.kill(); await child.exited; }
   await browser?.close().catch(() => {});
-  await Bun.write(join(output, liveComposer || dwellSmoke ? 'desktop-dwell-composer.json' : liveDocument ? 'desktop-live.json' : liveReply ? 'desktop-live-reply.json' : 'desktop-integration.json'), JSON.stringify({ time: new Date().toISOString(), binary, passed, checks, errors, documentEvidence, replyEvidence, nativeExitCode: child?.exitCode, nativeLog: await nativeLog }, null, 2));
+  const report = modelIndex < 0 ? (liveComposer || dwellSmoke ? 'desktop-dwell-composer' : liveDocument ? 'desktop-live' : liveReply ? 'desktop-live-reply' : 'desktop-integration') : `desktop-${selectedModel.replace(/[^a-z0-9.-]/gi, '-')}`;
+  await Bun.write(join(output, `${report}.json`), JSON.stringify({ time: new Date().toISOString(), binary, model: selectedModel, passed, checks, errors, documentEvidence, replyEvidence, nativeExitCode: child?.exitCode, nativeLog: await nativeLog }, null, 2));
   const resolvedTemporary = await realpath(isolated);
   const resolvedParent = await realpath(tmpdir());
   if (!relative(resolvedParent, resolvedTemporary).startsWith('..') && basename(resolvedTemporary).startsWith('kaji-desktop-verify-')) {

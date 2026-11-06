@@ -113,6 +113,23 @@ fn dwell_allows_enabled_controls_but_not_disabled_text_or_blank_space() {
                 .get("Ok")
                 .expect("bounded hit-test failed");
             assert_eq!(!target.is_null(), i == 0, "fixture target {i}: {target:?}");
+            if i == 0 {
+                for repeat in 0..5 {
+                    writeln!(
+                        input,
+                        "{}",
+                        serde_json::json!({"id":20+repeat,"command":"hit_test","point":point})
+                    )
+                    .unwrap();
+                    input.flush().unwrap();
+                    let again: serde_json::Value =
+                        serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap();
+                    assert_eq!(
+                        &again["result"]["Ok"], target,
+                        "same control changed identity between probes"
+                    );
+                }
+            }
         }
         writeln!(
             input,

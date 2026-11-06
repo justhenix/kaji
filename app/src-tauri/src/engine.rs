@@ -329,7 +329,9 @@ impl State {
     }
     fn clickable_target(&self, now: f64, point: Point) -> Option<&crate::uia::DwellTarget> {
         let hit = self.hit.as_ref()?;
-        if !(0. ..=300.).contains(&(now - hit.at)) || hit.point.distance(point) > 2. {
+        if !(0. ..=300.).contains(&(now - hit.at))
+            || hit.point.distance(point) > self.config.dwell_radius
+        {
             return None;
         }
         hit.target
@@ -389,9 +391,9 @@ impl Engine {
                             && s.status.session == session
                             && s.manual == manual
                             && s.status.phase == "tracking"
-                            && s.status
-                                .cursor
-                                .is_some_and(|current| current.distance(point) <= 2.)
+                            && s.status.cursor.is_some_and(|current| {
+                                current.distance(point) <= s.config.dwell_radius
+                            })
                         {
                             s.hit = Some(HitObservation { point, at, target });
                         }
@@ -756,6 +758,9 @@ mod tests {
         });
         assert!(s.clickable_target(200., point).is_some());
         assert!(s.clickable_target(401., point).is_none());
+        assert!(s.clickable_target(200., Point { x: 24., y: 20. }).is_some());
+        assert!(s.clickable_target(200., Point { x: 30., y: 20. }).is_none());
+        s.hit.as_mut().unwrap().target.as_mut().unwrap().rect.right = 23;
         assert!(s.clickable_target(200., Point { x: 24., y: 20. }).is_none());
         s.hit.as_mut().unwrap().target = None;
         assert!(s.clickable_target(200., point).is_none());
