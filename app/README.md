@@ -23,7 +23,7 @@ bun run --cwd app python:test
 bun run --cwd app native:test
 ```
 
-The build verifies the pinned face and wake models, copies their local WASM runtimes, compiles the managed agent, and stages an isolated CPython 3.14.10 runtime with pinned DOCX dependencies. It then builds the native executables. Runtime model assets and Python packages are bundled; end users do not need Python or pip. Build output is `app/src-tauri/target/debug/`; keep `kaji-agent.exe` and the `python/` directory beside `kaji.exe` when copying it.
+The build verifies the pinned face and wake models, copies their local WASM runtimes, compiles the managed agent, and stages an isolated CPython 3.14.10 runtime with pinned DOCX dependencies. It then builds the native executables. Runtime model assets and Python packages are bundled; end users do not need Python or pip. Build output is `app/src-tauri/target/debug/`; keep `kaji-diag.exe`, `kaji-agent.exe` and the `python/` directory beside `kaji.exe` when copying it.
 
 Python packaging follows the [official embedded-distribution guidance](https://docs.python.org/3/using/windows.html#the-embeddable-package). Download hashes are pinned in `scripts/build-python.ts`; changing versions requires rebuilding and running the DOCX tests.
 
@@ -44,7 +44,7 @@ For a real head-control session:
 
 Hold a comfortable neutral pose for calibration. Move your head to aim, then hold that pose over the desired control for 1.2 seconds. Holding an off-center pose no longer keeps driving the pointer. Dwell arms only on recognized enabled buttons, links, fields and similar controls; text, blank areas and unsupported canvases cannot trigger clicks. The composer shows **Aim** until a target is available, then **Ready**. Move away by more than 18 physical pixels to arm the next click. **Dwell Off** stops movement and clicks and releases the camera. A missing or ambiguous operator pauses input; reacquisition after more than one second requires calibration. Other input yields head control until 1.5 seconds idle and requires fresh aiming. Escape, stale frames, camera failure or display changes stop the session; restart explicitly. A stopped session cannot accept late frames.
 
-Type or say “You are in my way” to move the floating composer aside, “Move your composer left/right” for a particular edge, or “Fade your composer for three minutes” to dim it and pass clicks through. It returns automatically after the requested interval; activating Kaji from the taskbar also restores it. These reversible composer changes do not need an approval prompt.
+Type or say “You are in my way” to move the floating composer aside, “Move your composer left/right” for a particular edge, or “Fade your composer for three minutes” to dim it and pass clicks through. It returns automatically after the requested interval; activating Kaji from the taskbar also restores it. These reversible composer changes do not need an approval prompt. The pink Doppel appears for agent actions; ordinary head/mouse movement uses the Windows pointer with a dwell progress ring.
 
 Developer diagnostics accept JSONL over stdin. Input is denied unless the process starts with `--enable-input`. Direct pose injection additionally requires `--allow-replay`; the Tauri host never enables it.
 

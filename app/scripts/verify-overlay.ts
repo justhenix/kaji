@@ -30,7 +30,8 @@ try {
         });
       }, mode);
       const cursor = page.locator('.doppelganger-cursor');
-      assert.equal(await cursor.evaluate((element: Element) => getComputedStyle(element).opacity), mode === 'task' ? '1' : '0.48');
+      assert.equal(await cursor.isVisible(), mode === 'task');
+      if(mode === 'task') assert.equal(await cursor.evaluate((element: Element) => getComputedStyle(element).opacity), '1');
       assert.equal(await page.locator('.doppelganger-identity').isVisible(), mode === 'task');
       assert.equal(await cursor.evaluate((element: Element) => getComputedStyle(element).transitionDuration), '0s');
       await page.screenshot({ path: resolve(output, `doppel-${theme}-${mode}.png`) });
@@ -63,7 +64,7 @@ try {
   assert.equal(await page.getByRole('button',{name:'Show error details',exact:true}).textContent(),'Dwell unavailable');
   await page.getByRole('button',{name:'Show error details',exact:true}).click();
   assert(await page.getByRole('button',{name:'Try dwell again',exact:true}).isVisible());
-  console.log('PASS: idle and working Doppel states in both themes; active identity visible; reduced motion respected.');
+  console.log('PASS: no duplicate pointer during manual/head movement; agent cursor visible in both themes; dwell readiness and reduced motion verified.');
 } finally {
   await browser.close();
   server.stop(true);

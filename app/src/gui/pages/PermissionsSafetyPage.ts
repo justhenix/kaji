@@ -26,10 +26,9 @@ export function renderPermissionsSafetyPage(): HTMLElement {
     </div>
     <div class="kaji-card">
       <div class="settings-row">
-        <div class="settings-row-info"><div class="settings-row-icon"><i class="ri-stop-circle-line" aria-hidden="true"></i></div><div class="settings-row-text"><div class="settings-row-label">Emergency stop</div></div></div>
+        <div class="settings-row-info"><div class="settings-row-icon"><i class="ri-stop-circle-line" aria-hidden="true"></i></div><div class="settings-row-text"><div class="settings-row-label">Emergency stop</div><p class="settings-row-desc">Escape stops the current task and head control.</p></div></div>
         <div class="settings-row-actions"><div class="keycap-badge"><span class="keycap-item">Escape</span></div></div>
       </div>
-      <p class="safety-note">Escape stops the current task.</p>
     </div>`;
   for (const [selector, key] of [
     ['#ps-screen-toggle', 'permission_screen'],

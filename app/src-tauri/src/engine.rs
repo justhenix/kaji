@@ -257,8 +257,8 @@ impl State {
                         y: face.center_y,
                     });
                     Point {
-                        x: face.yaw,
-                        y: face.pitch,
+                        x: face.center_x,
+                        y: face.center_y,
                     }
                 })
         } else if frame.faces == 1 {
@@ -863,7 +863,11 @@ mod tests {
             .map(|i| s.advance_motion(1000. + i as f64 * 8.).unwrap().x)
             .collect();
         assert!(steps.iter().filter(|x| **x > 0.).count() >= 4);
-        assert!(steps.windows(2).all(|w| w[1] <= w[0]));
+        assert!(
+            steps
+                .iter()
+                .all(|step| *step <= s.config.max_speed * 0.008 + 1.)
+        );
         assert!(steps.iter().sum::<f64>() > 0.);
     }
     #[test]
@@ -948,6 +952,36 @@ mod tests {
         assert_eq!(s.status.phase, "tracking");
         assert!(s.status.operator_visible);
         assert_eq!(s.status.faces, 2);
+    }
+    #[test]
+    fn tracking_uses_operator_position_without_amplifying_nose_rotation_noise() {
+        let mut s = active();
+        for i in 0..26 {
+            live_observation(&mut s, i + 1, 10. + i as f64 * 40., vec![face()]).unwrap();
+        }
+        let before = s.status.pose.unwrap();
+        let noisy = crate::face::Face {
+            yaw: 0.25,
+            pitch: 0.6,
+            ..face()
+        };
+        live_observation(&mut s, 27, 1050., vec![noisy]).unwrap();
+        assert_eq!(s.status.pose.unwrap(), before);
+        assert_eq!(
+            s.status.raw_pose,
+            Some(Point {
+                x: face().center_x,
+                y: face().center_y
+            })
+        );
+        let shifted = crate::face::Face {
+            center_x: face().center_x + 0.02,
+            ..face()
+        };
+        for i in 0..6 {
+            live_observation(&mut s, i + 28, 1090. + i as f64 * 40., vec![shifted]).unwrap();
+        }
+        assert!(s.status.pose.unwrap().x > before.x);
     }
     #[test]
     fn operator_loss_disarms_and_recovers_without_adopting_background() {

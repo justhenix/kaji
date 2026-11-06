@@ -651,7 +651,7 @@ impl RuntimeManager {
                     } else {
                         OverlayMode::Hidden
                     },
-                    point: native::cursor().ok(),
+                    point: None,
                     target: None,
                     target_label: String::new(),
                     dwell_progress: 0.0,
@@ -2488,12 +2488,16 @@ impl RuntimeManager {
         let mut overlay = inner.snapshot.overlay.clone();
         let head_enabled = inner.snapshot.head.enabled;
         drop(inner);
-        let point = match native::cursor() {
-            Ok(point) => point,
-            Err(_) => return,
+        let point = if head_enabled {
+            match native::cursor() {
+                Ok(point) => Some(point),
+                Err(_) => return,
+            }
+        } else {
+            None
         };
         let previous = overlay.clone();
-        overlay.point = Some(point);
+        overlay.point = point;
         overlay.dwell_progress = if head_enabled {
             self.engine
                 .status()
@@ -2501,8 +2505,15 @@ impl RuntimeManager {
         } else {
             0.
         };
-        if refresh_display
+        if previous == overlay && !refresh_display {
+            return;
+        }
+        if !head_enabled
+            || refresh_display
             || overlay.viewport.is_none_or(|viewport| {
+                let Some(point) = point else {
+                    return false;
+                };
                 point.x < f64::from(viewport.left)
                     || point.y < f64::from(viewport.top)
                     || point.x >= f64::from(viewport.left) + viewport.width

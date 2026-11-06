@@ -4,6 +4,15 @@ import { playSendCue } from '../../audio-cue';
 import { LANGUAGE_OPTIONS } from '../types';
 import { store } from '../store';
 
+const voiceDescriptions: Record<string,string> = {
+  Liam: 'Clear and energetic', Lily: 'Soft and expressive', Matilda: 'Steady and professional',
+  River: 'Calm and neutral', Roger: 'Relaxed and resonant', Sarah: 'Warm and reassuring', Will: 'Bright and upbeat',
+};
+function voiceLabel(name: string): string {
+  const first = name.split(/\s+[-–—]\s+/)[0]!.trim();
+  return voiceDescriptions[first] ? `${first} — ${voiceDescriptions[first]}` : first;
+}
+
 function setServiceStatus(node: HTMLElement, name: string, capability?: ServiceCapability, error = false): void {
   node.className = `voice-service-status ${error ? 'error' : capability?.available ? 'available' : 'unavailable'}`;
   node.setAttribute('role', error ? 'alert' : 'status');
@@ -222,7 +231,7 @@ export function renderVoiceAudioPage(): HTMLElement {
     if (key === voiceCatalog) return;
     voiceCatalog = key;
     const selected = store.settings.speech_voice_id;
-    const options = voices.map(voice => new Option(voice.name, voice.id, false, voice.id === selected));
+    const options = voices.map(voice => new Option(voiceLabel(voice.name), voice.id, false, voice.id === selected));
     if (!voices.some(voice => voice.id === selected)) {
       const missing = new Option(voices.length ? 'Saved voice unavailable' : 'No voices available', selected, true, true);
       missing.disabled = true;

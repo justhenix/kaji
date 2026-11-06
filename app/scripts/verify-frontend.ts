@@ -45,6 +45,7 @@ try {
       const violations = (results.violations as AccessibilityViolation[]).filter(issue => ['serious', 'critical'].includes(issue.impact ?? ''));
       if (violations.length) failures.push({ theme, page: category.label, issues: violations.map(issue => ({ id: issue.id, targets: issue.nodes.map(node => node.target) })) });
       else checks.push(`${theme} ${category.label}: minimum size and accessibility`);
+      if (['general','permissions'].includes(category.id)) await page.screenshot({path:resolve(output,`screenshots/settings-${category.id}-${theme}-min.png`)});
     }
     await page.getByRole('button', { name: 'Appearance', exact: true }).click();
     await page.screenshot({ path: resolve(output, `screenshots/headless-settings-${theme}-min.png`) });

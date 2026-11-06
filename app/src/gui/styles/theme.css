@@ -510,6 +510,9 @@ input:focus-visible + .toggle-slider {
   outline: 2px solid var(--kaji-blue);
   outline-offset: 3px;
 }
+.general-input-actions { display: flex; align-items: center; gap: 16px; color: var(--text-secondary); font-size: 13px; }
+.general-input-actions button { min-height: 44px; min-width: 76px; }
+.settings-row-desc { margin: 4px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

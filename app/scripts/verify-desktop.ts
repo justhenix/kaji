@@ -128,16 +128,8 @@ try {
   }
   checks.push('Audio/overlay native permissions permit snapshots and reject conversation writes');
   const sprite = overlay.locator('.doppelganger-cursor');
-  await expect(sprite).toBeVisible();
-  const glow = await sprite.evaluate((element: Element) => getComputedStyle(element).filter);
-  assert(glow.includes('drop-shadow'), 'Dither cursor glow is missing');
-  const bounds = await sprite.boundingBox();
-  assert(bounds);
-  const viewport = await overlay.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
-  const x = Math.max(0, bounds.x - 12), y = Math.max(0, bounds.y - 12);
-  await overlay.screenshot({ path: join(output, 'screenshots/native-doppelganger.png'), omitBackground: true,
-    clip: { x, y, width: Math.min(bounds.width + 24, viewport.width - x), height: Math.min(bounds.height + 24, viewport.height - y) } });
-  checks.push('Small dither cursor renders a blue/pink glow in the native overlay');
+  await expect(sprite).toBeHidden();
+  checks.push('No idle Doppel copy follows the user pointer in the native overlay');
 
   await main.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(main).toHaveURL(/settings\.html/);
@@ -154,6 +146,14 @@ try {
     await main.screenshot({ path: join(output, `screenshots/native-settings-${theme}.png`) });
   }
   await main.locator('.settings-sidebar').getByRole('button', { name: 'General', exact: true }).click();
+  await expect(main.getByRole('button',{name:'Start head control',exact:true})).toBeVisible();
+  await main.getByRole('button',{name:'Start head control',exact:true}).click();
+  await expect(main.locator('[data-input-error]')).toContainText(/permission/i);
+  assert.equal((await invoke<RuntimeSnapshot>(main,'gui_get_runtime')).head.enabled,false);
+  await main.getByRole('button',{name:'About Kaji',exact:true}).click();
+  await expect(main.getByRole('button',{name:'Done',exact:true})).toBeVisible();
+  await main.getByRole('button',{name:'Done',exact:true}).click();
+  checks.push('General contains working input controls with native permission checks and the app details dialog');
   const launch = main.getByRole('combobox', { name: 'Open on launch', exact: true });
   await launch.focus();
   await launch.press('Enter');
@@ -241,6 +241,15 @@ try {
     assert(replyEvidence?.includes('KAJI_TYPED_OK'));
     await expect(main.locator('.composer-notice-text')).toHaveText(replyEvidence!);
     checks.push('Packaged agent answers a typed composer request with voice and camera disabled');
+    await main.getByRole('button',{name:'Open Kaji',exact:true}).click();
+    await main.getByRole('button',{name:'Settings',exact:true}).click();
+    await main.locator('.settings-sidebar').getByRole('button',{name:'Voice & Audio',exact:true}).click();
+    await expect.poll(async()=> (await main.locator('#va-voice-select option').allTextContents()).some((label:string)=>label.includes('Roger — Relaxed and resonant')), {timeout:15000}).toBe(true);
+    assert(!(await main.locator('#va-voice-select option').allTextContents()).some((label:string)=>/social media|actress|creator/i.test(label)));
+    await main.getByRole('combobox',{name:'ElevenLabs voice',exact:true}).click();
+    await main.screenshot({path:join(output,'screenshots/native-voice-descriptions.png')});
+    await main.keyboard.press('Escape');
+    checks.push('Live voice catalog uses short tone descriptions while preserving voice selections');
     await close(main);
   }
   if (liveComposer) {

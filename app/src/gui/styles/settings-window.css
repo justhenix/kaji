@@ -605,7 +605,6 @@
 .service-row.unavailable .service-value, .service-quota { color: var(--text-muted); }
 .service-state { padding: 12px 0; color: var(--text-secondary); font-size: 12px; }
 .settings-row-actions { display: flex; align-items: center; gap: 8px; }
-.safety-note { margin: -2px 0 0 46px; color: var(--text-muted); font-size: 11px; }
 .history-settings-row > label { color: var(--text-secondary); font-size: 13px; }
 .history-manage-row { display: flex; justify-content: flex-end; padding-top: 8px; }
 .head-runtime-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; }

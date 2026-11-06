@@ -16,19 +16,12 @@ export function overlayGeometry(state: OverlayState): OverlayGeometry | null {
   const scale = viewport.scaleFactor;
   const spriteWidth = 24 * (state.monitorScaleFactor ?? scale) / scale;
   const spriteHeight = spriteWidth * 440 / 400;
-  const cursor = state.point && state.cursorEnabled && state.mode !== 'hidden' ? {
+  const cursor = state.point && state.cursorEnabled && state.mode === 'task' ? {
     left: (state.point.x - viewport.left) / scale - spriteWidth * 54 / 400,
     top: (state.point.y - viewport.top) / scale - spriteWidth * 34 / 400,
     width: spriteWidth,
     height: spriteHeight,
   } : null;
-  if (cursor && state.mode === 'follow') {
-    const glowMargin = spriteWidth / 3;
-    const right = cursor.left + spriteWidth;
-    const left = cursor.left - spriteWidth - glowMargin;
-    cursor.left = right + spriteWidth + glowMargin <= viewport.width / scale ? right : Math.max(glowMargin, left);
-    cursor.top = Math.max(glowMargin, Math.min(cursor.top, viewport.height / scale - spriteHeight - glowMargin));
-  }
   const targetRect = state.target && state.target.right > state.target.left && state.target.bottom > state.target.top ? state.target : null;
   const target = targetRect && state.highlightEnabled && state.mode === 'task' ? {
     left: (targetRect.left - viewport.left) / scale,
@@ -46,7 +39,7 @@ export function renderOverlay(root: HTMLElement, state: OverlayState): void {
     if (surface) surface.hidden = true;
     return;
   }
-  surface.hidden = false;
+  surface.hidden = !geometry.cursor && !geometry.target && state.dwellProgress <= 0;
   surface.dataset.mode = state.mode;
   surface.style.width = `${geometry.width}px`;
   surface.style.height = `${geometry.height}px`;

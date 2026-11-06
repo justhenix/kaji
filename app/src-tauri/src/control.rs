@@ -66,6 +66,9 @@ impl Config {
 #[derive(Default, Debug)]
 pub struct PoseFilter {
     value: Option<Point>,
+    raw: Option<Point>,
+    derivative: Point,
+    samples: Vec<Point>,
     time: f64,
 }
 impl PoseFilter {
@@ -77,16 +80,55 @@ impl PoseFilter {
         _dead_zone: f64,
     ) -> Point {
         let dt = (now - self.time).max(0.);
+        if dt > 1000. {
+            self.samples.clear();
+            self.raw = None;
+            self.derivative = Point::default();
+        }
+        self.samples.push(raw);
+        if self.samples.len() > 3 {
+            self.samples.remove(0);
+        }
+        let median = |axis: fn(&Point) -> f64| {
+            let mut values: Vec<_> = self.samples.iter().map(axis).collect();
+            values.sort_by(f64::total_cmp);
+            if values.len() == 2 {
+                (values[0] + values[1]) / 2.
+            } else {
+                values[values.len() / 2]
+            }
+        };
+        let raw = Point {
+            x: median(|p| p.x),
+            y: median(|p| p.y),
+        };
         let value = if let Some(previous) = self.value.filter(|_| dt <= 1000.) {
-            let smoothing_ms = if neutral.is_some() { 60. } else { 120. };
-            let alpha = 1. - (-dt / smoothing_ms).exp();
+            let seconds = dt / 1000.;
+            let alpha =
+                |cutoff: f64| seconds / (seconds + 1. / (2. * std::f64::consts::PI * cutoff));
+            if let Some(last) = self.raw
+                && seconds > 0.
+            {
+                let a = alpha(1.);
+                self.derivative.x += ((raw.x - last.x) / seconds - self.derivative.x) * a;
+                self.derivative.y += ((raw.y - last.y) / seconds - self.derivative.y) * a;
+            }
+            let smooth = |value: f64, previous: f64, speed: f64| {
+                let a = if neutral.is_some() {
+                    alpha(0.8 + speed.abs())
+                } else {
+                    1. - (-dt / 120.).exp()
+                };
+                previous + (value - previous) * a
+            };
             Point {
-                x: previous.x + (raw.x - previous.x) * alpha,
-                y: previous.y + (raw.y - previous.y) * alpha,
+                x: smooth(raw.x, previous.x, self.derivative.x),
+                y: smooth(raw.y, previous.y, self.derivative.y),
             }
         } else {
             raw
         };
+        self.raw = Some(raw);
         self.value = Some(value);
         self.time = now;
         value
@@ -148,29 +190,47 @@ pub struct Motion {
 }
 impl Motion {
     pub fn step(&mut self, pose: Point, _neutral: Point, dt: f64, c: &Config) -> Point {
+        if !dt.is_finite() || dt <= 0. {
+            return Point::default();
+        }
         let Some(anchor) = self.anchor.as_mut() else {
             self.anchor = Some(pose);
             return Point::default();
         };
         // Head displacement, rather than held tilt, drives the pointer. A still head never cruises.
-        let gain = c.max_speed * 2. / c.range;
-        let noise = c.dead_zone * 0.02;
+        let gain = c.max_speed / c.range;
+        let noise = 2. / gain * (c.dead_zone / 0.035);
         let alpha = 1. - (-dt.max(0.) / 0.016).exp();
-        let advance = |value: f64,
-                       anchor: &mut f64,
-                       pending: &mut f64,
-                       remainder: &mut f64,
-                       direction: f64| {
+        let advance = |value: f64, anchor: &mut f64, direction: f64| {
             let delta = value - *anchor;
             if delta.abs() > noise {
                 let movement = delta - noise.copysign(delta);
                 *anchor += movement;
-                *pending += movement * gain * direction;
+                movement * gain * direction
+            } else {
+                0.
             }
+        };
+        self.pending.x += advance(pose.x, &mut anchor.x, -1.);
+        self.pending.y += advance(pose.y, &mut anchor.y, 1.);
+        // Discard excess motion debt: a tracking spike must not turn into a long cursor chase.
+        let pending_distance = self.pending.x.hypot(self.pending.y);
+        let pending_limit = c.max_speed * 0.060;
+        if pending_distance > pending_limit {
+            self.pending.x *= pending_limit / pending_distance;
+            self.pending.y *= pending_limit / pending_distance;
+        }
+        let distance = pending_distance.min(pending_limit) * alpha;
+        let fraction = if distance > 0. {
+            (c.max_speed * dt.max(0.) / distance).min(1.) * alpha
+        } else {
+            0.
+        };
+        let step = |pending: &mut f64, remainder: &mut f64| {
             let movement = if pending.abs() < 0.01 {
                 *pending
             } else {
-                *pending * alpha
+                *pending * fraction
             };
             *pending -= movement;
             *remainder += movement;
@@ -179,20 +239,8 @@ impl Motion {
             step
         };
         Point {
-            x: advance(
-                pose.x,
-                &mut anchor.x,
-                &mut self.pending.x,
-                &mut self.remainder.x,
-                -1.,
-            ),
-            y: advance(
-                pose.y,
-                &mut anchor.y,
-                &mut self.pending.y,
-                &mut self.remainder.y,
-                1.,
-            ),
+            x: step(&mut self.pending.x, &mut self.remainder.x),
+            y: step(&mut self.pending.y, &mut self.remainder.y),
         }
     }
 }
@@ -276,6 +324,110 @@ impl Dwell {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "replays a private local tracking measurement; never controls the desktop"]
+    fn measured_trace_motion_is_bounded() {
+        let path = std::env::var("KAJI_HEAD_MEASUREMENT").expect("set KAJI_HEAD_MEASUREMENT");
+        let data: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let frames = data["samples"].as_array().unwrap();
+        let c = Config::default();
+        let mut filter = PoseFilter::default();
+        let mut calibration = Calibration::default();
+        let mut motion = Motion::default();
+        let mut dwell = Dwell::default();
+        let mut neutral = None;
+        let mut pose = Point::default();
+        let mut cursor = Point::default();
+        let mut next = 0;
+        let mut positions = Vec::new();
+        let mut max_step: f64 = 0.;
+        let mut clicks = 0;
+        for tick in 0..1250 {
+            let now = tick as f64 * 8.;
+            while next < frames.len() && frames[next]["ms"].as_f64().unwrap() <= now {
+                let f = &frames[next];
+                next += 1;
+                if f["faces"] != 1 || f["candidates"].as_array().unwrap().len() != 1 {
+                    continue;
+                }
+                let p = &f["candidates"][0];
+                pose = filter.update(
+                    f["ms"].as_f64().unwrap(),
+                    Point {
+                        x: p["center_x"].as_f64().unwrap(),
+                        y: p["center_y"].as_f64().unwrap(),
+                    },
+                    neutral,
+                    c.dead_zone,
+                );
+                if neutral.is_none() {
+                    neutral = calibration.update(now, pose.x, pose.y);
+                }
+            }
+            if let Some(neutral) = neutral {
+                let delta = motion.step(pose, neutral, 0.008, &c);
+                max_step = max_step.max(delta.x.hypot(delta.y));
+                cursor.x += delta.x;
+                cursor.y += delta.y;
+                if dwell.update_allowed(now, cursor, &c, delta == Point::default()) {
+                    clicks += 1;
+                }
+                if now > 3000. {
+                    positions.push(cursor);
+                }
+            }
+        }
+        assert!(positions.len() > 100, "measurement never calibrated");
+        let span = |axis: fn(&Point) -> f64| {
+            let mut values: Vec<_> = positions.iter().map(axis).collect();
+            values.sort_by(f64::total_cmp);
+            values[values.len() * 95 / 100] - values[values.len() * 5 / 100]
+        };
+        println!(
+            "measurement: max_step_px={max_step:.2}, p90_width_px={:.2}, p90_height_px={:.2}, still_dwells={clicks}",
+            span(|p| p.x),
+            span(|p| p.y)
+        );
+        assert!(max_step <= c.max_speed * 0.008 + 1.5);
+        assert!(
+            clicks > 0,
+            "the still-head recording never reached a stable dwell"
+        );
+    }
+    #[test]
+    fn a_tracking_jump_is_speed_limited_and_cannot_leave_a_long_motion_tail() {
+        let c = Config::default();
+        let mut motion = Motion::default();
+        motion.step(Point::default(), Point::default(), 0.008, &c);
+        let pose = Point { x: 1., y: 1. };
+        let mut total = 0.;
+        for _ in 0..40 {
+            let delta = motion.step(pose, Point::default(), 0.008, &c);
+            let distance = delta.x.hypot(delta.y);
+            assert!(distance <= c.max_speed * 0.008 + 1.5);
+            total += distance;
+        }
+        assert!(total <= c.max_speed * 0.060 + 2.);
+        assert_eq!(
+            motion.step(pose, Point::default(), 0.008, &c),
+            Point::default()
+        );
+    }
+    #[test]
+    fn isolated_landmark_spikes_do_not_move_the_filtered_pose() {
+        let mut filter = PoseFilter::default();
+        let neutral = Point::default();
+        for i in 0..100 {
+            let raw = if i == 50 {
+                Point { x: 0.2, y: -0.15 }
+            } else {
+                neutral
+            };
+            let filtered = filter.update(i as f64 * 32., raw, Some(neutral), 0.035);
+            assert_eq!(filtered, neutral);
+        }
+    }
     #[test]
     fn calibration_completes_at_supported_camera_rates() {
         for fps in [15, 30, 60] {
@@ -444,7 +596,8 @@ mod tests {
         let mut motion = Motion::default();
         motion.step(Point::default(), Point::default(), 0.008, &c);
         let aimed = Point { x: -0.12, y: 0.06 };
-        assert!(motion.step(aimed, Point::default(), 0.008, &c).x > 100.);
+        let first = motion.step(aimed, Point::default(), 0.008, &c);
+        assert!(first.x > 0. && first.x.hypot(first.y) <= c.max_speed * 0.008 + 1.5);
         for _ in 0..24 {
             motion.step(aimed, Point::default(), 0.008, &c);
         }
@@ -481,7 +634,7 @@ mod tests {
             let now = i as f64 * 8.;
             if i % 4 == 0 {
                 let raw = Point {
-                    x: if i % 8 == 0 { 0.004 } else { -0.004 },
+                    x: if i % 8 == 0 { 0.02 } else { -0.02 },
                     y: 0.,
                 };
                 pose = filter.update(now, raw, Some(neutral), c.dead_zone);

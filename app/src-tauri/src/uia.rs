@@ -9,6 +9,7 @@ use std::{
     io::{Read, Seek, SeekFrom},
     os::windows::io::AsRawHandle,
     os::windows::process::CommandExt,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
         Mutex,
@@ -28,6 +29,14 @@ use windows::Win32::{
 };
 
 const LIMIT: usize = 512;
+
+fn worker_executable(host: &Path) -> Result<PathBuf> {
+    let helper = host.with_file_name("kaji-diag.exe");
+    if !helper.is_file() {
+        return Err("Kaji's desktop helper is missing. Reinstall Kaji.".into());
+    }
+    Ok(helper)
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Identity {
     pub hwnd: isize,
@@ -153,6 +162,15 @@ impl Action {
 #[cfg(test)]
 mod action_tests {
     use super::*;
+    #[test]
+    fn desktop_probes_use_the_console_helper_instead_of_starting_the_gui_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = dir.path().join("kaji.exe");
+        assert!(worker_executable(&host).is_err());
+        let helper = dir.path().join("kaji-diag.exe");
+        std::fs::write(&helper, []).unwrap();
+        assert_eq!(worker_executable(&host).unwrap(), helper);
+    }
     #[test]
     fn dwell_rejects_text_pages_and_unactionable_controls() {
         for kind in [50020, 50030, 50032, 50033] {
@@ -365,20 +383,23 @@ impl Inspector {
         let action = matches!(request, Request::Act { .. });
         let epoch = self.cancel.load(Ordering::SeqCst);
         let mut output = tempfile::tempfile().map_err(|e| e.to_string())?;
-        let mut child = Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
-            .arg("--uia-worker")
-            .arg(serde_json::to_string(&request).map_err(|e| e.to_string())?)
-            .args(if action {
-                vec!["--enable-actions"]
-            } else {
-                vec![]
-            })
-            .stdin(Stdio::null())
-            .stdout(output.try_clone().map_err(|e| e.to_string())?)
-            .stderr(Stdio::null())
-            .creation_flags(0x08000000)
-            .spawn()
-            .map_err(|e| format!("UIA worker launch: {e}"))?;
+        // A GUI subprocess triggers Windows' startup cursor even with CREATE_NO_WINDOW.
+        let mut child = Command::new(worker_executable(
+            &std::env::current_exe().map_err(|e| e.to_string())?,
+        )?)
+        .arg("--uia-worker")
+        .arg(serde_json::to_string(&request).map_err(|e| e.to_string())?)
+        .args(if action {
+            vec!["--enable-actions"]
+        } else {
+            vec![]
+        })
+        .stdin(Stdio::null())
+        .stdout(output.try_clone().map_err(|e| e.to_string())?)
+        .stderr(Stdio::null())
+        .creation_flags(0x08000000)
+        .spawn()
+        .map_err(|e| format!("UIA worker launch: {e}"))?;
         let _job = match WorkerJob::attach(&child) {
             Ok(job) => job,
             Err(e) => {
