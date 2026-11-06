@@ -1,10 +1,14 @@
 # Kaji engine
 
-Windows-first interaction engine with a Tauri desktop interface, compact composer and hidden sensor host. Rust owns input, calibration, cursor motion, dwell, manual takeover and emergency stop.
+Windows-first interaction engine with a Tauri desktop interface, compact composer, local conversation history, and hidden sensor and audio hosts. Rust owns task state, input, calibration, cursor motion, dwell, manual takeover, and emergency stop.
 
-The composer GUI includes voice/dwell controls, an optional text editor, human-in-the-loop questions and an animated logo/matrix. Its `kaji:composer-update` and `kaji:composer-action` events define the frontend boundary; speech recognition, answer interpretation and workflow execution still need to be connected. The composer, main view and settings reuse one native window. Closing the main view or settings returns to the composer; Alt+F4 on the composer exits Kaji.
+The composer sends typed requests, answers, method choices, and approvals through the native runtime. A managed Pi agent uses the same task owner for semantic desktop actions and registered adapters. The composer, main view, settings, and History reuse one native window. Closing the main view or settings returns to the composer; Alt+F4 on the composer exits Kaji.
 
-A separate [collaborative Pi harness](docs/COLLABORATIVE-HARNESS.md) is available for developer use. It keeps an independent logical cursor and requests Rust-authorized semantic actions without driving the Windows cursor. The head-control session retains its stricter manual-takeover behavior.
+Voice uses a bundled local “Hey Kaji” detector, Groq transcription, and ElevenLabs feedback. Service availability and free quotas are checked at the gateway; provider secrets are provisioned there. Local history uses SQLite, configurable retention, and asynchronous Groq titles with a local fallback. See the [integration plan](docs/END-TO-END-INTEGRATION-PLAN.md) for contracts, behavior, and acceptance criteria. General provider/environment switching remains a separate follow-up.
+
+The [integration verification report](docs/INTEGRATION-VERIFICATION.md) separates completed checks from the remaining desktop and hardware walkthroughs. `bun run --cwd app test:frontend` runs a headless browser against built assets, checking minimum window sizes and accessibility without opening native windows or using devices. Run `build:worker` first after changing a view. `test:desktop` opens native windows and should run only when it will not interrupt the operator.
+
+A separate [collaborative Pi harness](docs/COLLABORATIVE-HARNESS.md) is available for developer use. It keeps an independent logical cursor and requests Rust-authorized semantic actions without driving the Windows cursor. Head control yields briefly to other input, then resumes after idle with dwell clicks disarmed until fresh aiming.
 
 [Guide/Assist workflows](docs/GUIDE-ASSIST.md) now support native confirmation and broader semantic actions. The [Cloudflare gateway](../gateway/README.md) keeps upstream model credentials outside the desktop application. See the [current checkpoint](docs/UNATTENDED-CHECKPOINT.md) for executed verification and remaining limits.
 
@@ -15,10 +19,13 @@ bun install --frozen-lockfile
 bun run --cwd app build
 bun run --cwd app check
 bun run --cwd app test
+bun run --cwd app python:test
 bun run --cwd app native:test
 ```
 
-The build downloads and verifies the pinned Face Landmarker model, copies local MediaPipe WASM, and compiles both Windows executables. Camera inference uses bundled files at runtime. Build output is `app/src-tauri/target/debug/`.
+The build verifies the pinned face and wake models, copies their local WASM runtimes, compiles the managed agent, and stages an isolated CPython 3.14.10 runtime with pinned DOCX dependencies. It then builds the native executables. Runtime model assets and Python packages are bundled; end users do not need Python or pip. Build output is `app/src-tauri/target/debug/`; keep `kaji-agent.exe` and the `python/` directory beside `kaji.exe` when copying it.
+
+Python packaging follows the [official embedded-distribution guidance](https://docs.python.org/3/using/windows.html#the-embeddable-package). Download hashes are pinned in `scripts/build-python.ts`; changing versions requires rebuilding and running the DOCX tests.
 
 ```powershell
 .\app\src-tauri\target\debug\kaji-diag.exe --help
