@@ -24,6 +24,10 @@ export function shouldRestoreWake(snapshot: RuntimeSnapshot | null): boolean {
   return snapshot?.voice.enabled === true && snapshot.voice.phase === 'wake';
 }
 
+export function shouldStartWake(snapshot: RuntimeSnapshot | null, enabled: boolean): boolean {
+  return enabled && snapshot?.voice.sessionId === 0 && !snapshot.voice.enabled && snapshot.voice.phase === 'off';
+}
+
 export function utteranceRoute(snapshot: RuntimeSnapshot | null): { taskId?: string; questionId?: string; conversationId?: string; voiceSessionId: number } {
   const question = snapshot?.question;
   return { voiceSessionId: snapshot?.voice.sessionId ?? 0, ...(snapshot?.activeConversationId ? { conversationId: snapshot.activeConversationId } : {}), ...(question ? { taskId: question.taskId, questionId: question.id } : {}) };
@@ -69,7 +73,8 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 export function downsample(input: Float32Array, sourceRate: number): Float32Array {
-  if (sourceRate === 16_000) return input.slice();
+  const bounded = (sample: number) => Number.isFinite(sample) ? Math.max(-1, Math.min(1, sample)) : 0;
+  if (sourceRate === 16_000) return Float32Array.from(input, bounded);
   const outputLength = Math.floor(input.length * 16_000 / sourceRate);
   const output = new Float32Array(outputLength);
   const scale = sourceRate / 16_000;
@@ -77,7 +82,7 @@ export function downsample(input: Float32Array, sourceRate: number): Float32Arra
     const position = i * scale;
     const left = Math.floor(position);
     const fraction = position - left;
-    output[i] = input[left] * (1 - fraction) + input[Math.min(left + 1, input.length - 1)] * fraction;
+    output[i] = bounded(input[left] * (1 - fraction) + input[Math.min(left + 1, input.length - 1)] * fraction);
   }
   return output;
 }
@@ -147,7 +152,7 @@ export class AudioHost {
     window.addEventListener('pagehide', () => {
       devices?.removeEventListener('devicechange', onDeviceChange);
       this.unlisten?.(); this.unlistenRuntime?.();
-      void this.stop(true);
+      void this.stop();
     }, { once: true });
     const snapshot = await fetchRuntime().catch(() => null);
     if (snapshot) this.acceptRuntime(snapshot);
@@ -159,6 +164,9 @@ export class AudioHost {
       await this.start('wake', settings.microphone, settings.noise_suppression);
     } else if (snapshot?.voice.enabled && ['starting', 'listening', 'transcribing', 'speaking'].includes(snapshot.voice.phase)) {
       await this.setPhase('error', 'Audio session restarted. Start listening again.');
+    } else if (snapshot?.voice.sessionId === 0) {
+      const settings = await fetchSettings();
+      if (shouldStartWake(snapshot, settings.voice_activation)) await dispatchRuntime({ type: 'audio.ready' });
     }
   }
 
@@ -180,7 +188,7 @@ export class AudioHost {
   }
 
   private async start(mode: 'wake' | 'utterance', inputDeviceId: string | undefined, noiseSuppression: boolean): Promise<void> {
-    const stopping = this.stop(false, false);
+    const stopping = this.stop(false);
     const generation = this.generation;
     await stopping;
     if (generation !== this.generation) return;
@@ -193,7 +201,7 @@ export class AudioHost {
     this.peakLevel = 0;
     this.micStartTimer = setTimeout(() => {
       if (generation !== this.generation) return;
-      const stopping = this.stop(false, false);
+      const stopping = this.stop(false);
       void this.setPhase('error', 'The microphone didn’t send audio. Check Voice & Audio settings and try again.');
       void stopping;
     }, MIC_START_TIMEOUT_MS);
@@ -215,7 +223,7 @@ export class AudioHost {
         : error instanceof Error && error.name === 'NotFoundError'
           ? 'No microphone was found.'
           : error instanceof Error ? error.message : 'Microphone unavailable';
-      await this.stop(false, false);
+      await this.stop(false);
       await this.setPhase('error', message);
     }
   }
@@ -261,7 +269,7 @@ export class AudioHost {
     this.stream = stream;
     void this.refreshInputDevices();
     this.micLabel = stream.getAudioTracks()[0]?.label.replace(/^Default - /, '') || 'the selected microphone';
-    this.stream.getAudioTracks()[0]?.addEventListener('ended', () => { void this.stop(false).then(() => this.setPhase('error', 'Microphone disconnected')); }, { once: true });
+    this.stream.getAudioTracks()[0]?.addEventListener('ended', () => { void this.stop().then(() => this.setPhase('error', 'Microphone disconnected')); }, { once: true });
     try { this.context = new AudioContext({ sampleRate: 16_000 }); }
     catch { this.context = new AudioContext(); }
     const context = this.context;
@@ -339,7 +347,7 @@ export class AudioHost {
         this.capturing = false;
         if (this.mode === 'wake') await this.resumeWakeOrStop();
         else {
-          await this.stop(false, false);
+          await this.stop(false);
           await this.setPhase('error', `No speech detected on ${this.micLabel}. Check the input device in Voice & Audio.`);
         }
       }
@@ -393,7 +401,7 @@ export class AudioHost {
         this.finishingUtterance = false;
         this.transcriptionPending = false;
         this.captureRoute = Promise.resolve({ voiceSessionId: 0 });
-        if (failed) await this.stop(false, false);
+        if (failed) await this.stop(false);
         else await this.resumeWakeOrStop();
       }
     }
@@ -499,7 +507,7 @@ export class AudioHost {
     }
   }
 
-  private async stop(disposeSpotter = false, report = true): Promise<void> {
+  private async stop(report = true): Promise<void> {
     const generation = ++this.generation;
     this.playbackRequest++;
     this.playbackGeneration++;
@@ -524,7 +532,7 @@ export class AudioHost {
     this.stream?.getTracks().forEach((track) => track.stop()); this.stream = null;
     const context = this.context;
     this.context = null;
-    if (disposeSpotter) { this.spotter?.dispose(); this.spotter = null; }
+    this.spotter?.dispose(); this.spotter = null;
     await context?.close().catch(() => {});
     if (report && generation === this.generation) await this.setPhase('off');
   }

@@ -454,6 +454,8 @@ pub enum RuntimeAction {
         audio_level: Option<f64>,
         reason: Option<String>,
     },
+    #[serde(rename = "audio.ready")]
+    AudioReady,
     #[serde(rename = "audio.transcribe")]
     AudioTranscribe {
         utterance_id: String,
@@ -638,7 +640,7 @@ impl RuntimeManager {
                     calibration_samples: 0,
                 },
                 voice: VoiceState {
-                    session_id: 1,
+                    session_id: 0,
                     enabled: false,
                     phase: VoicePhase::Off,
                     reason: "Voice starts when enabled".into(),
@@ -804,6 +806,19 @@ impl RuntimeManager {
             RuntimeAction::Mode { mode } => self.set_mode(mode)?,
             RuntimeAction::Head { enabled } => self.set_head(enabled)?,
             RuntimeAction::Listen { enabled, immediate } => self.set_voice(enabled, immediate)?,
+            RuntimeAction::AudioReady => {
+                let initial = self
+                    .inner
+                    .lock()
+                    .map_err(|_| "runtime state poisoned")?
+                    .snapshot
+                    .voice
+                    .session_id
+                    == 0;
+                if initial && self.gui.get_settings()?.voice_activation {
+                    self.set_voice(true, false)?;
+                }
+            }
             RuntimeAction::Dwell { enabled } => self.set_dwell(enabled)?,
             RuntimeAction::Calibrate => self.calibrate()?,
             RuntimeAction::FileSelect => self.select_file(false)?,
@@ -2838,7 +2853,7 @@ impl RuntimeManager {
                 json!({
                     "type": "start",
                     "mode": if wait_for_wake { "wake" } else { "utterance" },
-                    "wakeEnabled": wait_for_wake,
+                    "wakeEnabled": settings.voice_activation,
                     "inputDeviceId": settings.microphone,
                     "noiseSuppression": settings.noise_suppression,
                     "sensitivity": settings.input_sensitivity,

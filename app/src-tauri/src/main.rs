@@ -243,6 +243,7 @@ mod tests {
             serde_json::from_value(json!({ "type": "head", "enabled": true })).unwrap();
         assert!(!runtime_action_allowed("audio", &request));
         assert!(runtime_action_allowed("audio", &transcribe));
+        assert!(runtime_action_allowed("audio", &RuntimeAction::AudioReady));
         assert!(!runtime_action_allowed("audio", &head));
         assert!(!runtime_action_allowed("overlay", &transcribe));
         assert!(runtime_action_allowed("main", &request));
@@ -287,8 +288,15 @@ fn gui_save_settings(
     settings: AppSettings,
 ) -> Result<(), String> {
     use tauri::Emitter;
+    let previous = state.get_settings()?;
     state.save_settings(settings.clone())?;
     runtime.update_history_settings(&settings)?;
+    if previous.voice_activation != settings.voice_activation {
+        runtime.dispatch(RuntimeAction::Listen {
+            enabled: settings.voice_activation,
+            immediate: false,
+        })?;
+    }
     let _ = app.emit("settings-updated", &settings);
     Ok(())
 }
@@ -372,7 +380,9 @@ fn runtime_action_allowed(window_label: &str, action: &RuntimeAction) -> bool {
         "main" => true,
         "audio" => matches!(
             action,
-            RuntimeAction::AudioState { .. } | RuntimeAction::AudioTranscribe { .. }
+            RuntimeAction::AudioReady
+                | RuntimeAction::AudioState { .. }
+                | RuntimeAction::AudioTranscribe { .. }
         ),
         _ => false,
     }

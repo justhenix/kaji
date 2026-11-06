@@ -150,6 +150,7 @@ export type RuntimeAction =
   | { type: 'conversation.rename'; conversationId: string; title: string }
   | { type: 'conversation.delete'; conversationId: string }
   | { type: 'artifact.open'; artifactId: string }
+  | { type: 'audio.ready' }
   | { type: 'audio.state'; phase: VoiceState['phase']; audioLevel?: number; reason?: string }
   | { type: 'audio.transcribe'; utteranceId: string; wavBase64: string; taskId?: string; questionId?: string; conversationId?: string; voiceSessionId: number };
 

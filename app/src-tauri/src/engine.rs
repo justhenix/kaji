@@ -327,6 +327,20 @@ impl State {
                 .step(self.status.pose?, self.neutral?, dt, &self.config),
         )
     }
+    fn observe_motion(&mut self, current: Point, manual: u64, now: f64) -> bool {
+        let Some((destination, sent_at)) = self.pending_destination else {
+            return true;
+        };
+        if current.distance(destination) <= 2. {
+            self.expected = Some(current);
+            self.pending_destination = None;
+        } else if now - sent_at <= 80. {
+            return false;
+        } else {
+            self.yield_to_manual(manual, current, now);
+        }
+        true
+    }
     fn clickable_target(&self, now: f64, point: Point) -> Option<&crate::uia::DwellTarget> {
         let hit = self.hit.as_ref()?;
         if !(0. ..=300.).contains(&(now - hit.at))
@@ -633,15 +647,8 @@ fn tick(shared: &Shared, s: &mut State, now: f64) -> Result<()> {
     if s.manual_until.is_some() {
         s.expected = Some(current);
     }
-    if let Some((destination, sent_at)) = s.pending_destination {
-        if current.distance(destination) <= 2. {
-            s.expected = Some(current);
-            s.pending_destination = None;
-        } else if now - sent_at > 80. {
-            return Err("injected cursor movement was not observed".into());
-        } else {
-            return Ok(());
-        }
+    if !s.observe_motion(current, manual, now) {
+        return Ok(());
     }
     if s.expected.is_some_and(|p| p.distance(current) > 3.) {
         s.yield_to_manual(shared.signals.manual.load(Ordering::SeqCst), current, now);
@@ -737,6 +744,28 @@ fn tick(shared: &Shared, s: &mut State, now: f64) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unobserved_motion_yields_without_ending_the_session_or_retaining_a_click() {
+        let mut s = moving();
+        let current = Point::default();
+        s.pending_destination = Some((Point { x: 100., y: 100. }, 1000.));
+        assert!(!s.observe_motion(current, 0, 1080.));
+        assert!(s.observe_motion(current, 0, 1081.));
+        assert!(s.running());
+        assert_eq!(s.status.phase, "mouse");
+        assert!(s.pending_destination.is_none());
+        assert_eq!(s.expected, Some(current));
+        assert!(!s.dwell.armed());
+        assert_eq!(s.status.dwell_progress, 0.);
+        assert!(s.manual_input_paused(current, 2580., false));
+        assert!(s.manual_input_paused(current, 2581., false));
+        assert!(!s.dwell.armed());
+        let destination = Point { x: 10., y: 10. };
+        s.pending_destination = Some((destination, 3000.));
+        assert!(s.observe_motion(destination, 0, 3008.));
+        assert!(s.pending_destination.is_none());
+        assert_eq!(s.expected, Some(destination));
+    }
     #[test]
     fn dwell_requires_a_fresh_target_at_the_current_pointer() {
         let mut s = State::stopped();

@@ -346,6 +346,7 @@ export class Composer {
     if (this.state === 'failed' && this.failureSettings === 'head') return 'Dwell unavailable';
     if (this.state === 'failed' && this.failureSettings === 'voice') return 'Mic unavailable';
     if (this.voicePhase === 'starting') return 'Opening mic…';
+    if (this.voicePhase === 'wake' && this.state === 'ready') return 'Say “Hey Kaji”…';
     return this.voicePhase === 'transcribing' ? 'Transcribing…' : labels[this.state];
   }
 
@@ -359,9 +360,9 @@ export class Composer {
     if (this.prompt.dataset.transcript !== 'true') this.prompt.querySelector('span')!.textContent = this.statusLabel();
     const busy = this.state === 'thinking' || this.state === 'working';
     const listening = this.recordingVoice;
-    const label = listening ? 'Cancel recording' : busy ? 'Stop task' : 'Start listening';
+    const label = listening ? 'Cancel recording' : busy ? 'Stop task' : this.voicePhase === 'wake' ? 'Speak now' : 'Start listening';
     this.voice.setAttribute('aria-label', label);
-    this.voice.title = label;
+    this.voice.title = this.voicePhase === 'wake' && !busy ? 'Listening for “Hey Kaji”. Click to speak now.' : label;
     this.voice.setAttribute('aria-pressed', String(listening));
     this.voice.querySelector('i')!.className = listening ? 'ri-mic-fill' : busy ? 'ri-stop-line' : 'ri-mic-line';
     this.dwell.setAttribute('aria-pressed', String(this.dwellEnabled));

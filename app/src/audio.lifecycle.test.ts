@@ -133,12 +133,12 @@ test('A delayed wake hit cannot begin recording in a replacement session', async
   const h = harness(async () => []);
   const capture = h.host as unknown as {
     mode: string; wakeEnabled: boolean; capturing: boolean;
-    spotter: { processAudio(): Promise<{ label: string }[]> };
+    spotter: { processAudio(): Promise<{ label: string }[]>; dispose(): void };
     handleSamples(samples: Float32Array): Promise<void>;
   };
   capture.mode = 'wake';
   capture.wakeEnabled = true;
-  capture.spotter = { processAudio: () => hit.promise };
+  capture.spotter = { processAudio: () => hit.promise, dispose() {} };
   const processing = capture.handleSamples(new Float32Array([0.1]));
   await h.host.control({ type: 'stop' });
   capture.mode = 'wake';
@@ -146,6 +146,19 @@ test('A delayed wake hit cannot begin recording in a replacement session', async
   await processing;
   expect(capture.capturing).toBe(false);
   expect(h.runtimeReads).toBe(0);
+});
+
+test('Stop discards the wake model tied to the cancelled microphone session', async () => {
+  const h = harness(async () => []);
+  const capture = h.host as unknown as { startAbort: AbortController; spotter: {dispose(): void} | null };
+  const controller = new AbortController();
+  let disposed = 0;
+  capture.startAbort = controller;
+  capture.spotter = {dispose() { disposed++; }};
+  await h.host.control({type: 'stop'});
+  expect(controller.signal.aborted).toBe(true);
+  expect(disposed).toBe(1);
+  expect(capture.spotter).toBeNull();
 });
 
 test('Auto-send waits for three continuous seconds of silence after speech', async () => {
