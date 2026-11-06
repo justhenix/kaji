@@ -16,7 +16,7 @@ The app includes the managed Pi agent, generic executor and application discover
 
 - Groq and ElevenLabs keys are provisioned as Worker secrets. Never print or commit their values.
 - ElevenLabs CLI onboarding completed. The official SDK is installed at version 2.75.0. The CLI-created `gateway/.env.local` is ignored.
-- The Worker is deployed at `https://kaji-gateway.relanta.workers.dev/v1`; latest deployed code version is `bfe077d7-4cb4-44c9-89ef-ea88a2353e25`.
+- The Worker is deployed at `https://kaji-gateway.relanta.workers.dev/v1`; latest deployed version is `14895432-86f6-4659-9cc0-20b3c2781cbe`, which aligns the owner hash with the canonical saved Windows login. Application code is unchanged from `bfe077d7-4cb4-44c9-89ef-ea88a2353e25`.
 - The default reasoning and vision model is `deepseek-v4.1-flash`. Settings also offer `ag/gemini-3.8-flash-medium` and `ag/gemini-3.8-flash-high` through the remote AIO's 9router. Speech and titles retain `whisper-large-v3-turbo`, `eleven_v4_turbo`, and `qwen/qwen3.8-27b`.
 - All three reasoning choices passed live image, streaming tool-call and tool-result continuation checks. `BAI_VISION_VERIFIED=deepseek-v4.1-flash` is deployed. Moondream is not configured because DeepSeek's native vision passed.
 - ElevenLabs Free accounts return subscription status `free` and unrestricted default voices with `available_for_tiers: []`. Both are handled without allowing paid accounts, restricted voices, or overage.
@@ -62,7 +62,7 @@ The three requested GPT-6 Luna Max agents completed their assigned implementatio
 
 ## November 6: gateway recovery and independent taskbar activation
 
-Restored this Windows user's missing DPAPI owner login by rotating only `GATEWAY_TOKEN_SHA256` in the deployed Worker. Provider secrets, source deployment, and 9router configuration were preserved. Existing copies of the prior owner login must be reprovisioned. Authenticated capabilities reported all five services available.
+The release-package check found that the canonical saved Windows DPAPI login was rejected with HTTP 401. Updated only the deployed `GATEWAY_TOKEN_SHA256` to match that saved login, then verified authenticated capabilities and a real typed request. Provider secrets, application code and 9router configuration were preserved. The credential remains outside the installer and repository.
 
 The native composer Explorer scenario passed against the live gateway: observed the Doppel overlay, approved one exact invocation, verified `Home - File Explorer` as foreground, and sampled an unchanged physical pointer throughout. Evidence: `app/verification/taskbar-live.json`. Run `bun app/scripts/verify-taskbar.ts --execute` only on an available, idle desktop with the integration target configured.
 
@@ -97,3 +97,11 @@ The Dwell button now retains its name and displays Off, Starting, Calibrate, Mov
 App TypeScript, 64 app tests, 82 Rust library tests, Clippy with warnings denied, and rendered readiness/overflow/reduced-motion checks passed. Both themes were visually reviewed. Tests establish that resuming cannot dispatch an old click; person-driven aiming and dwell acceptance remains separate.
 
 Live laptop check: started Dwell, disabled dwell clicks during warmup, and navigated the app with the mouse. The camera stayed running, completed 25 calibration observations, displayed the temporary other-input pause, then returned to `native head control active` without a restart. Head control was stopped explicitly afterward. The main-window Head control switch now reflects the enabled camera session, including temporary pauses or waiting for a face, rather than incorrectly showing Off whenever tracking is not actively moving.
+
+## November 6: Windows setup package for quiet rehearsal
+
+`bun run --cwd app package:windows` builds the optimized Windows x64 app and a per-user NSIS setup executable using `tauri.package.conf.json`. The installer includes the managed agent and isolated Python/DOCX worker. Both launchers use the Windows GUI subsystem and do not open console windows. The setup file is unsigned.
+
+Built `app/src-tauri/target/release/bundle/nsis/Kaji_0.1.0_x64-setup.exe` (75,670,760 bytes), copied to the user's Downloads as `Kaji-0.1.0-setup.exe`. SHA-256: `ed5b65800089e5215900559e0e5adb36593d159fca354d039f4d2c27a4315ff9`. The installer manifest contains no settings, history, environment file or DPAPI credential. The installed executable matches the installer payload; Tauri's bundle-type patch means the intermediate build executable can have a different hash.
+
+Installed under `%LOCALAPPDATA%/Kaji/` with Start-menu and desktop shortcuts. The saved login was preserved. The installed copy passed 14 native smoke checks, including both settings themes, History persistence, missing-login handling and a live typed composer reply `KAJI_TYPED_OK`. Installed Python imported the DOCX dependencies successfully. Evidence: `app/verification/desktop-live-reply.json`. Voice activation and read-aloud feedback are off in this user's settings for quiet rehearsal; the test did not use the microphone or camera.

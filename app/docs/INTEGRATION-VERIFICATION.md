@@ -16,6 +16,7 @@ Updated November 6, 2026 (Asia/Jakarta). Integration is implemented and built. T
 | Live models | Earlier November 6 checks verified vision, streaming tool calls and tool-result continuation for DeepSeek and both Gemini routes. Model choices persisted through Save and reload. |
 | Live native actions | New Tab opened once without approval. A controlled critical action required approval and was rejected without executing. Two consecutive final Explorer taskbar runs left a real Explorer window foreground with the physical pointer unchanged. |
 | Live head control | Camera calibration completed, other input temporarily yielded control, and tracking resumed without a camera restart. Dwell clicks were disabled during this hardware check. |
+| Windows installer | Optimized per-user setup built and installed. Payload and saved-login preservation verified; installed app passed 14 native smoke checks including a live typed reply with camera and voice disabled. Both launchers use the GUI subsystem. The installer is unsigned. |
 | Checkpoint hygiene | Source and staged-content scans found no credentials. Private router configuration, raw diagnostic logs and live desktop captures remain outside Git. |
 
 Detailed November 6 results and local evidence paths are in [the checkpoint](INTEGRATION-CHECKPOINT.md). This pass did not repeat unchanged provider requests or count synthetic audio as a live microphone test.

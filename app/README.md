@@ -10,7 +10,7 @@ The [integration verification report](docs/INTEGRATION-VERIFICATION.md) separate
 
 A separate [collaborative Pi harness](docs/COLLABORATIVE-HARNESS.md) is available for developer use. It keeps an independent logical cursor and requests Rust-authorized semantic actions without driving the Windows cursor. Head control yields briefly to other input, then resumes after idle with dwell clicks disarmed until fresh aiming.
 
-[Guide/Assist workflows](docs/GUIDE-ASSIST.md) now support native confirmation and broader semantic actions. The [Cloudflare gateway](../gateway/README.md) keeps upstream model credentials outside the desktop application. See the [current checkpoint](docs/UNATTENDED-CHECKPOINT.md) for executed verification and remaining limits.
+[Guide/Assist workflows](docs/GUIDE-ASSIST.md) now support native confirmation and broader semantic actions. The [Cloudflare gateway](../gateway/README.md) keeps upstream model credentials outside the desktop application. See the [current checkpoint](docs/INTEGRATION-CHECKPOINT.md) for executed verification and remaining limits.
 
 From the repository root, on Windows with Rust/MSVC, Windows SDK, WebView2 and Bun 1.4.2 installed:
 
@@ -27,6 +27,10 @@ The build verifies the pinned face and wake models, copies their local WASM runt
 
 Python packaging follows the [official embedded-distribution guidance](https://docs.python.org/3/using/windows.html#the-embeddable-package). Download hashes are pinned in `scripts/build-python.ts`; changing versions requires rebuilding and running the DOCX tests.
 
+Build a Windows x64 setup executable with `bun run --cwd app package:windows`, using the default Cargo target directory. It produces a release build and a per-user NSIS installer under `app/src-tauri/target/release/bundle/nsis/`, including the managed agent and Python worker. The installer checks WebView2 and installs it if needed. It contains no gateway credential: this laptop uses the existing Windows-user DPAPI login, and another Windows account must provision its own login. For quiet typed-input and dwell rehearsal, turn off Voice activation and Spoken feedback in Voice & Audio.
+
+`bun app/scripts/verify-desktop.ts --binary <installed-kaji.exe> --live-reply` checks the installed app in an isolated data profile and submits one real typed request with camera and voice disabled. It needs this Windows user's gateway login. The default run checks unavailable-login recovery without provider inference.
+
 ```powershell
 .\app\src-tauri\target\debug\kaji-diag.exe --help
 .\app\src-tauri\target\debug\kaji.exe --help
@@ -38,7 +42,7 @@ For a real head-control session:
 .\app\src-tauri\target\debug\kaji.exe --camera --enable-input --seconds 120
 ```
 
-Hold a comfortable neutral pose for calibration. After calibration, move deliberately before the first dwell is armed. Return to neutral over the desired control and dwell for 1.2 seconds. Move away by more than 18 physical pixels to arm the next click. A missing or ambiguous operator immediately pauses input; the same operator can recover, with recalibration after a loss longer than one second. Escape, foreign mouse/keyboard input, stale frames, camera failure, or display changes stop the session. Restart explicitly after a stop. A stopped session cannot accept late frames.
+Hold a comfortable neutral pose for calibration. After calibration, move deliberately before the first dwell is armed. Return to neutral over the desired control and dwell for 1.2 seconds. Move away by more than 18 physical pixels to arm the next click. A missing or ambiguous operator immediately pauses input; the same operator can recover, with recalibration after a loss longer than one second. Other input yields head control until 1.5 seconds idle and disarms dwell until fresh aiming. Escape, stale frames, camera failure, or display changes stop the session. Restart explicitly after a stop. A stopped session cannot accept late frames.
 
 Developer diagnostics accept JSONL over stdin. Input is denied unless the process starts with `--enable-input`. Direct pose injection additionally requires `--allow-replay`; the Tauri host never enables it.
 

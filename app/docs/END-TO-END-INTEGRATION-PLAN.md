@@ -19,7 +19,7 @@ The agreed delivery includes:
 - Local wake-word detection, Groq transcription, and ElevenLabs bilingual spoken feedback.
 - Conversation history, automatic titles, and navigation inside the existing native window.
 
-New Groq and ElevenLabs usage must stay within free allowances. Existing B.AI reasoning access and its request cap remain in use. An installer, public accounts, website redesign, local reasoning models, and developer environment-management improvements are outside this delivery. Environment management is the next plan.
+New Groq and ElevenLabs usage must stay within free allowances. Existing B.AI reasoning access and its request cap remain in use. A per-user Windows setup package was added on November 6 for operator rehearsal. Public accounts, website redesign, local reasoning models, and developer environment-management improvements remain outside this delivery. Environment management is the next plan.
 
 Kaji must handle unpredictable user goals across applications and file types. YouTube scrolling alongside DOCX editing is an illustrative acceptance scenario, not a hardcoded product workflow. Resolve the user's goal and current context at runtime; never use those example application names or a fixed document-cleanup flow as universal routing rules.
 

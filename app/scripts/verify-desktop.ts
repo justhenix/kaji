@@ -14,6 +14,7 @@ const binaryIndex = process.argv.indexOf('--binary');
 const binary = binaryIndex < 0 ? resolve(root, 'src-tauri/target/debug/kaji.exe') : resolve(process.argv[binaryIndex + 1]);
 const output = resolve(root, 'verification');
 const liveDocument = process.argv.includes('--live-document');
+const liveReply = process.argv.includes('--live-reply');
 const isolated = await mkdtemp(join(tmpdir(), 'kaji-desktop-verify-'));
 await mkdir(join(isolated, 'roaming/Kaji'), { recursive: true });
 await mkdir(join(output, 'screenshots'), { recursive: true });
@@ -31,6 +32,7 @@ const errors: string[] = [];
 const checks: string[] = [];
 let launches = 0;
 let documentEvidence: { reply: string; paragraphs: string[]; title?: string } | undefined;
+let replyEvidence: string | undefined;
 
 async function invoke<T>(page: Page, command: string, args: Record<string, unknown> = {}): Promise<T> {
   await page.waitForLoadState('domcontentloaded');
@@ -215,6 +217,27 @@ try {
   assert.equal((await invoke<{ id: string }[]>(main, 'gui_history_list')).some(row => row.id === conversationId), false);
   checks.push('History rename, delete cancellation, and confirmed deletion work through the real interface');
   await close(main);
+  if (liveReply) {
+    ({ main } = await start(true));
+    await main.getByRole('button', { name: 'Composer', exact: true }).click();
+    await expect(main).toHaveURL(/composer\.html$/);
+    await main.getByRole('button', { name: 'Type a request', exact: true }).click();
+    const editor = main.getByRole('textbox', { name: 'Your request', exact: true });
+    await editor.fill('Reply with exactly KAJI_TYPED_OK.');
+    await editor.press('Enter');
+    await expect.poll(async () => {
+      const state = await invoke<RuntimeSnapshot>(main, 'gui_get_runtime');
+      assert(!state.voice.enabled && !state.head.enabled, 'The typed test started a device');
+      assert(!state.question, 'The typed reply unexpectedly needs user input');
+      if (['error', 'stopped', 'blocked'].includes(state.task?.phase ?? '')) throw new Error(state.task?.message);
+      replyEvidence = state.task?.message;
+      return state.task?.phase;
+    }, { timeout: 90_000, intervals: [250, 500, 1000] }).toBe('complete');
+    assert(replyEvidence?.includes('KAJI_TYPED_OK'));
+    await expect(main.locator('.composer-notice-text')).toHaveText(replyEvidence!);
+    checks.push('Packaged agent answers a typed composer request with voice and camera disabled');
+    await close(main);
+  }
   if (liveDocument) {
     ({ main } = await start(true));
     await main.getByRole('button', { name: 'Composer', exact: true }).click();
@@ -257,14 +280,14 @@ try {
   }
   assert.deepEqual(errors, []);
   passed = true;
-  console.log(`PASS: ${checks.length} native desktop integration checks; no camera, microphone, or injected input; provider inference ${liveDocument ? 'included' : 'disabled'}.`);
+  console.log(`PASS: ${checks.length} native desktop integration checks; no camera, microphone, or injected input; provider inference ${liveDocument || liveReply ? 'included' : 'disabled'}.`);
 } catch (error) {
   errors.push(error instanceof Error ? error.message : String(error));
   throw error;
 } finally {
   if (child) { child.kill(); await child.exited; }
   await browser?.close().catch(() => {});
-  await Bun.write(join(output, liveDocument ? 'desktop-live.json' : 'desktop-integration.json'), JSON.stringify({ time: new Date().toISOString(), passed, checks, errors, documentEvidence, nativeExitCode: child?.exitCode, nativeLog: await nativeLog }, null, 2));
+  await Bun.write(join(output, liveDocument ? 'desktop-live.json' : liveReply ? 'desktop-live-reply.json' : 'desktop-integration.json'), JSON.stringify({ time: new Date().toISOString(), binary, passed, checks, errors, documentEvidence, replyEvidence, nativeExitCode: child?.exitCode, nativeLog: await nativeLog }, null, 2));
   const resolvedTemporary = await realpath(isolated);
   const resolvedParent = await realpath(tmpdir());
   if (!relative(resolvedParent, resolvedTemporary).startsWith('..') && basename(resolvedTemporary).startsWith('kaji-desktop-verify-')) {

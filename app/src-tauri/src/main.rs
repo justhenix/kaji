@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use kaji_engine::{
     control::Frame,
     engine::{Engine, Session},
