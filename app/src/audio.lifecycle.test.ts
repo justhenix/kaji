@@ -186,7 +186,7 @@ test('Launch starts capture from native readiness without waiting for a loopback
   }
 });
 
-test('Auto-send waits for three continuous seconds of silence after speech', async () => {
+test('Short commands send sooner while pauses reset the adaptive silence timer', async () => {
   const h = harness(async () => []);
   const capture = h.host as unknown as {
     mode: string; capturing: boolean;
@@ -197,15 +197,25 @@ test('Auto-send waits for three continuous seconds of silence after speech', asy
   capture.capturing = true;
   let sends = 0;
   capture.finishUtterance = async () => { sends++; };
-  const second = new Float32Array(16_000);
-  await capture.recordUtterance(second, 0);
-  await capture.recordUtterance(second, 0.1);
-  await capture.recordUtterance(second, 0);
-  await capture.recordUtterance(second, 0);
-  await capture.recordUtterance(second, 0.1);
-  await capture.recordUtterance(second, 0);
-  await capture.recordUtterance(second, 0);
+  const half = new Float32Array(8_000);
+  await capture.recordUtterance(half, 0.1);
+  await capture.recordUtterance(half, 0.001);
+  await capture.recordUtterance(half, 0.1);
+  await capture.recordUtterance(half, 0.001);
+  await capture.recordUtterance(half, 0.001);
   expect(sends).toBe(0);
-  await capture.recordUtterance(second, 0);
+  await capture.recordUtterance(half, 0.001);
+  expect(sends).toBe(1);
+});
+
+test('Long speech keeps a longer pause allowance without waiting three seconds', async () => {
+  const h = harness(async () => []);
+  const capture = h.host as unknown as {mode: string; capturing: boolean; recordUtterance(samples: Float32Array, level: number): Promise<void>; finishUtterance(): Promise<void>};
+  capture.mode = 'utterance'; capture.capturing = true;
+  let sends = 0; capture.finishUtterance = async () => { sends++; };
+  await capture.recordUtterance(new Float32Array(160_000), 0.1);
+  await capture.recordUtterance(new Float32Array(24_000), 0);
+  expect(sends).toBe(0);
+  await capture.recordUtterance(new Float32Array(8_000), 0);
   expect(sends).toBe(1);
 });

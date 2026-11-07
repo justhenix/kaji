@@ -13,7 +13,9 @@ export const WAKE_ACTIVE_PATHS = 8;
 const MODEL_DATA = '/wake/preload.data';
 const MODEL_METADATA = '/wake/preload.js.metadata';
 const MAX_UTTERANCE_MS = 30_000;
-const END_SILENCE_MS = 3_000;
+export function endSilenceMs(speechMs: number, pauseMs: number): number {
+  return Math.min(2_000, 1_000 + speechMs * 0.08 + pauseMs * 0.6);
+}
 const NO_SPEECH_TIMEOUT_MS = 9_000;
 const MIC_START_TIMEOUT_MS = 8_000;
 
@@ -109,6 +111,9 @@ export class AudioHost {
   private recordingMs = 0;
   private captureElapsedMs = 0;
   private quietMs = 0;
+  private speechMs = 0;
+  private pauseEstimateMs = 0;
+  private speechLevel = 0;
   private noiseFloor = 0;
   private micLabel = '';
   private captureRoute: Promise<ReturnType<typeof utteranceRoute>> = Promise.resolve({ voiceSessionId: 0 });
@@ -331,6 +336,9 @@ export class AudioHost {
     this.recordingMs = 0;
     this.captureElapsedMs = 0;
     this.quietMs = 0;
+    this.speechMs = 0;
+    this.pauseEstimateMs = 0;
+    this.speechLevel = 0;
     this.noiseFloor = 0;
     this.heardSpeech = false;
     this.capturing = true;
@@ -347,7 +355,7 @@ export class AudioHost {
   private async recordUtterance(samples: Float32Array, level: number): Promise<void> {
     const durationMs = samples.length / 16_000 * 1000;
     this.captureElapsedMs += durationMs;
-    const threshold = Math.max(0.00012 + (100 - this.sensitivity) * 0.000004, this.noiseFloor * 4);
+    const threshold = Math.max(0.00012 + (100 - this.sensitivity) * 0.000004, this.noiseFloor * 4, this.speechLevel * 0.04);
     const quiet = level < threshold;
     if (quiet && !this.heardSpeech) {
       this.noiseFloor += (level - this.noiseFloor) * Math.min(1, durationMs / 250);
@@ -364,10 +372,15 @@ export class AudioHost {
       return;
     }
     this.heardSpeech = true;
+    if (!quiet) {
+      if (this.quietMs >= 120) this.pauseEstimateMs = this.pauseEstimateMs * 0.5 + this.quietMs * 0.5;
+      this.speechMs += durationMs;
+      this.speechLevel = Math.max(level, this.speechLevel * Math.exp(-durationMs / 3000));
+    }
     this.recording.push(samples.slice());
     this.recordingMs += durationMs;
     this.quietMs = quiet ? this.quietMs + durationMs : 0;
-    if (this.quietMs >= END_SILENCE_MS || this.recordingMs >= MAX_UTTERANCE_MS) await this.finishUtterance();
+    if (this.quietMs >= endSilenceMs(this.speechMs, this.pauseEstimateMs) || this.recordingMs >= MAX_UTTERANCE_MS) await this.finishUtterance();
   }
 
   private async finishUtterance(): Promise<void> {

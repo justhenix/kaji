@@ -85,6 +85,7 @@ try {
   assert(phases.has('wake') && phases.has('listening') && phases.has('transcribing'), `Missing voice transitions: ${[...phases]}`);
   assert(/kaji voice works/i.test(final!.task!.message), `Unexpected reply: ${final!.task!.message}`);
   await expect.poll(async () => (await invoke<RuntimeSnapshot>(main, 'gui_get_runtime')).voice.phase).toBe('wake');
+  await expect(main.locator('.composer-notice')).toBeHidden({timeout: 5500});
   await invoke(main, 'gui_dispatch', {action: {type: 'listen', enabled: false}});
   const audio = browser.contexts().flatMap((context: {pages(): Page[]}) => context.pages()).find((page: Page) => page.url().endsWith('/audio.html'))!;
   await audio.reload();

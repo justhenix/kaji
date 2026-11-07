@@ -81,6 +81,7 @@ export class Composer {
   private frameUpdates = Promise.resolve();
   private leaving = false;
   private replyTaskId: string | null = null;
+  private replyTimer: ReturnType<typeof setTimeout> | undefined;
   private voicePhase: RuntimeSnapshot['voice']['phase'] = 'off';
   private failureSettings: 'voice' | 'head' | null = null;
 
@@ -294,6 +295,7 @@ export class Composer {
       } else if (this.currentPanel === 'question') void this.openPanel(null, false);
     }
     if (update.state) this.state = update.state;
+    if (this.state !== 'ready' || this.question) clearTimeout(this.replyTimer);
     if (update.voicePhase !== undefined) this.voicePhase = update.voicePhase;
     if (update.failureSettings !== undefined) this.failureSettings = update.failureSettings;
     if (update.message !== undefined) this.get('.composer-notice-text').textContent = update.message;
@@ -477,6 +479,7 @@ export class Composer {
 
   showReply(taskId: string | null, artifacts: ArtifactReference[]): void {
     if (taskId === this.replyTaskId) return;
+    clearTimeout(this.replyTimer);
     this.replyTaskId = taskId;
     const files = this.get('.composer-reply-files');
     files.replaceChildren();
@@ -492,6 +495,9 @@ export class Composer {
     }
     this.renderState();
     void this.openPanel('notice');
+    this.replyTimer = setTimeout(() => {
+      if (this.replyTaskId === taskId && this.state === 'ready' && !this.question && this.desiredPanel === 'notice') void this.openPanel(null);
+    }, 3000);
   }
 
   private async openPanel(next: Panel, animate = true): Promise<void> {
@@ -609,7 +615,7 @@ async function initComposer(): Promise<void> {
     composer.update({
       state,
       message: snapshot.voice.phase === 'starting' ? 'Waiting for audio from your microphone.'
-        : snapshot.voice.phase === 'listening' ? 'Speak now. Kaji sends after 3 seconds of silence.'
+        : snapshot.voice.phase === 'listening' ? 'Speak now. Pause when you’re done to send.'
         : snapshot.voice.phase === 'transcribing' ? 'Turning your speech into a request.'
         : snapshot.voice.phase === 'error' ? snapshot.voice.reason
         : failureSettings === 'head' ? (snapshot.head.reason.includes('manual takeover')

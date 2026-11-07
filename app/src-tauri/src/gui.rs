@@ -131,7 +131,7 @@ impl Default for AppSettings {
 
             // AI & Models
             ai_provider: "cloud".into(),
-            model: "Kaji Pro".into(),
+            model: "ag/gemini-3.8-flash-medium".into(),
             capabilities_screen: true,
             capabilities_vision: true,
             capabilities_actions: true,
