@@ -213,7 +213,7 @@ impl DocumentWorker {
     ) -> Result<DocxArtifact> {
         let response = self.request_worker(request, current)?;
         if response.id != artifact_id
-            || response.output_path.as_deref() != Some(&output.to_string_lossy())
+            || !same_output_path(output, response.output_path.as_deref())
             || !output.is_file()
         {
             return Err("DOCX worker returned an unverified artifact".into());
@@ -335,6 +335,17 @@ impl DocumentWorker {
     }
 }
 
+fn same_output_path(expected: &Path, reported: Option<&str>) -> bool {
+    let Ok(expected) = expected.canonicalize() else {
+        return false;
+    };
+    reported.is_some_and(|path| {
+        Path::new(path)
+            .canonicalize()
+            .is_ok_and(|reported| reported == expected)
+    })
+}
+
 fn worker_command() -> Result<(Command, PathBuf)> {
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let app_dir = executable
@@ -414,6 +425,25 @@ fn unix_ms() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn output_verification_accepts_path_aliases_but_rejects_other_files() {
+        let temporary = tempfile::tempdir().unwrap();
+        let spelling = temporary.path().join("spelling");
+        std::fs::create_dir(&spelling).unwrap();
+        let output = temporary.path().join("result.docx");
+        let other = temporary.path().join("other.docx");
+        std::fs::write(&output, b"expected").unwrap();
+        std::fs::write(&other, b"other").unwrap();
+        let alias = spelling.join("..").join("result.docx");
+        assert!(same_output_path(&alias, Some(&output.to_string_lossy())));
+        assert!(!same_output_path(&output, Some(&other.to_string_lossy())));
+        assert!(!same_output_path(&output, None));
+        assert!(!same_output_path(&output, Some("missing.docx")));
+        assert!(!same_output_path(
+            &temporary.path().join("missing.docx"),
+            None
+        ));
+    }
 
     #[test]
     fn document_operations_serialize_worker_field_names_in_camel_case() {
@@ -448,7 +478,9 @@ mod tests {
     #[ignore = "spawns the isolated Python DOCX worker"]
     fn rust_request_roundtrips_through_python_docx_worker() {
         let temporary = tempfile::tempdir().unwrap();
-        let worker = DocumentWorker::new(temporary.path().join("artifacts")).unwrap();
+        let spelling = temporary.path().join("path-spelling");
+        std::fs::create_dir(&spelling).unwrap();
+        let worker = DocumentWorker::new(spelling.join("..").join("artifacts")).unwrap();
         assert!(
             worker.is_available(),
             "Python DOCX worker dependencies missing"
