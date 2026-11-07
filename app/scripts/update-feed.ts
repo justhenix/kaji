@@ -17,7 +17,7 @@ const file = Bun.file(installer);
 assert(await file.exists() && file.size > 0);
 const hash = new Bun.CryptoHasher('sha256').update(await file.arrayBuffer()).digest('hex');
 await Bun.write(resolve(root, 'web/public/updates/latest.json'), JSON.stringify({
-  version, pub_date: new Date().toISOString(), notes: 'Improved Hey Kaji recognition, adaptive speech pauses, and replies that stay through spoken feedback.',
+  version, pub_date: new Date().toISOString(), notes: 'Windows keyboard shortcuts, clear connection-check results, and accurate voice capability answers.',
   platforms: { 'windows-x86_64': { url, signature: sig } },
 }, null, 2) + '\n');
 console.log(JSON.stringify({ version, filename: remote.pathname.split('/').at(-1), bytes: file.size, sha256: hash }));

@@ -76,6 +76,7 @@ export function renderAiModelsPage(): HTMLElement {
       <div class="kaji-card-title">Services</div>
       <div id="ai-service-state" aria-live="polite"><p class="service-state" role="status">Checking service availability…</p></div>
       <button class="btn-secondary" id="ai-service-retry" type="button">Check connection</button>
+      <p class="service-state" id="ai-connection-result" role="status" aria-live="polite" hidden></p>
     </div>
     <div class="kaji-card">
       <div class="settings-row">
@@ -95,14 +96,23 @@ export function renderAiModelsPage(): HTMLElement {
     store.setDraftField('model', (event.currentTarget as HTMLSelectElement).value);
   };
   let active = true;
+  let checking = false;
+  let checkRevision = -1;
   const retry = container.querySelector<HTMLButtonElement>('#ai-service-retry')!;
+  const result = container.querySelector<HTMLElement>('#ai-connection-result')!;
   retry.onclick = async () => {
+    checking = true;
+    checkRevision = revision;
     retry.disabled = true;
     retry.textContent = 'Checking…';
+    result.hidden = false;
+    result.textContent = 'Checking the connection to Kaji…';
     try {
       await dispatchRuntime({ type: 'services.refresh' });
     } catch {
       if (active) renderServices(container, null, true);
+      checking = false;
+      result.textContent = 'Connection check failed. Check your internet connection and try again.';
       retry.disabled = false;
       retry.textContent = 'Check connection';
     }
@@ -111,9 +121,17 @@ export function renderAiModelsPage(): HTMLElement {
   const update = (snapshot: RuntimeSnapshot) => {
     if (!active || snapshot.revision <= revision) return;
     revision = snapshot.revision;
-    if (snapshot.message === 'Service status updated') {
+    if (checking && snapshot.revision > checkRevision && snapshot.message === 'Service status updated') {
+      checking = false;
       retry.disabled = false;
       retry.textContent = 'Check connection';
+      const available = services.filter(service => snapshot.services?.[service.key].available).length;
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      result.textContent = available === services.length
+        ? `Connected to Kaji. All ${available} services are ready. Checked at ${time}.`
+        : available > 0
+          ? `Connected to Kaji. ${available} of ${services.length} services are available. Checked at ${time}.`
+          : `Connection check finished. AI services are unavailable; see the status above. Checked at ${time}.`;
     }
     const advertised = snapshot.services?.reasoning.models;
     if (advertised) for (const option of container.querySelector<HTMLSelectElement>('#ai-model-select')!.options) {

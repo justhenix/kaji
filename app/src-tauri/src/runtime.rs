@@ -739,12 +739,18 @@ impl RuntimeManager {
                 let frame = Duration::from_nanos(16_666_667);
                 let mut next_display_check = Instant::now();
                 let mut next_head_update = Instant::now();
+                let mut emergency_epoch = 0;
                 loop {
                     let tick = Instant::now();
                     let Some(runtime) = runtime.upgrade() else {
                         break;
                     };
-                    if runtime.input.signals.emergency.load(Ordering::SeqCst) {
+                    let latest_emergency =
+                        runtime.input.signals.emergency_epoch.load(Ordering::SeqCst);
+                    if latest_emergency != emergency_epoch {
+                        emergency_epoch = latest_emergency;
+                        let _ = runtime.emergency_stop();
+                    } else if runtime.input.signals.emergency.load(Ordering::SeqCst) {
                         let task = runtime.inner.lock().ok().and_then(|inner| {
                             inner
                                 .snapshot
@@ -931,6 +937,16 @@ impl RuntimeManager {
         }
         let _ = self.desktop.restore_layout();
         let _ = self.engine.stop("Tauri host exit");
+    }
+
+    pub fn emergency_stop(&self) -> Result<()> {
+        let native = self.gui.emergency_stop();
+        let voice = self.set_voice(false, false);
+        let head = self.set_head(false);
+        let task = self.control_task(None, "stop");
+        self.bump_revision();
+        self.emit_current();
+        native.and(voice).and(head).and(task)
     }
 
     fn start_request(
@@ -2340,7 +2356,19 @@ impl RuntimeManager {
         }
         let inner = self.inner.lock().map_err(|_| "runtime state poisoned")?;
         Ok(
-            json!({"executors":executors,"responseLanguage":response_language,"userWindow":inner.user_window_id,"targetWindow":inner.active_target_id,"selectedFile":inner.selected_file.as_ref().map(|path|json!({"name":path.file_name().map(|name|name.to_string_lossy()),"extension":path.extension().map(|name|name.to_string_lossy())})),"vision":inner.snapshot.services.as_ref().is_some_and(|services|services.vision.available)}),
+            json!({"executors":executors,"responseLanguage":response_language,"userWindow":inner.user_window_id,"targetWindow":inner.active_target_id,"selectedFile":inner.selected_file.as_ref().map(|path|json!({"name":path.file_name().map(|name|name.to_string_lossy()),"extension":path.extension().map(|name|name.to_string_lossy())})),"vision":inner.snapshot.services.as_ref().is_some_and(|services|services.vision.available),
+                "mode":mode,
+                "voice":{
+                    "wakePhrase":"Hey Kaji", "wakeEnabled":settings.voice_activation,
+                    "listening":inner.snapshot.voice.enabled && matches!(inner.snapshot.voice.phase, VoicePhase::Wake | VoicePhase::Listening),
+                    "recognitionLanguage":settings.recognition_language,
+                    "recognitionLanguages":["English", "Bahasa Indonesia"],
+                    "transcriptionAvailable":inner.snapshot.services.as_ref().is_some_and(|services|services.stt.available),
+                    "spokenFeedbackEnabled":settings.voice_feedback,
+                    "spokenFeedbackAvailable":inner.snapshot.services.as_ref().is_some_and(|services|services.tts.service.available)
+                },
+                "headControl":{"enabled":inner.snapshot.head.enabled,"active":inner.snapshot.head.active,"dwellEnabled":inner.snapshot.head.dwell_enabled}
+            }),
         )
     }
 

@@ -17,6 +17,7 @@
     "allow-gui-history-get",
     "allow-gui-save-settings",
     "allow-gui-get-engine-status",
+    "allow-gui-shortcut-status",
     "allow-gui-set-mode",
     "allow-gui-toggle-head-control",
     "allow-gui-toggle-voice",

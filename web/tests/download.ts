@@ -18,7 +18,7 @@ try {
   const response = await page.goto(`${base}/download`);
   assert.equal(response?.status(), 200);
   const download = await started;
-  assert.equal(download.suggestedFilename(), 'Kaji-0.1.3-x64-setup.exe');
+  assert.equal(download.suggestedFilename(), 'Kaji-0.1.4-x64-setup.exe');
   const stream = await download.createReadStream();
   const hash = new Bun.CryptoHasher('sha256');
   let bytes = 0;
@@ -35,7 +35,7 @@ try {
   const retryStarted = page.waitForEvent('download');
   await page.getByRole('link', { name: 'Download manually', exact: true }).click();
   const retry = await retryStarted;
-  assert.equal(retry.suggestedFilename(), 'Kaji-0.1.3-x64-setup.exe');
+  assert.equal(retry.suggestedFilename(), 'Kaji-0.1.4-x64-setup.exe');
   assert.equal(retry.url(), download.url());
   await retry.cancel();
   assert.deepEqual(errors, []);
