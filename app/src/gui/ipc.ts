@@ -88,6 +88,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+if (isTauri && getCurrentWindow().label === 'main') {
+  // Accessibility input can reach WebView2 without passing through the Windows keyboard hook.
+  window.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !event.repeat) {
+      void invoke('gui_emergency_stop').catch(error => console.error('Emergency stop failed', error));
+    }
+  });
+}
 let browserStatus: EngineGuiStatus = {
   phase: 'offline', reason: '', mode: 'assist', head_control_active: false,
   voice_active: false, is_paused: false, session_id: 0,
@@ -243,6 +251,20 @@ export async function fetchRuntime(): Promise<RuntimeSnapshot> {
 }
 
 export type RuntimeUnlisten = (() => void) & { ready: Promise<void> };
+
+export interface ShortcutStatus { id: number; label: string; keys: string; available: boolean; reason: string | null }
+
+export async function fetchShortcutStatus(): Promise<ShortcutStatus[] | null> {
+  return isTauri ? invoke<ShortcutStatus[]>('gui_shortcut_status') : null;
+}
+
+export function onShortcutError(callback: (message: string) => void): () => void {
+  let active = true;
+  let stop: (() => void) | undefined;
+  if (isTauri) void listen<string>('kaji:shortcut-error', event => { if (active) callback(event.payload); })
+    .then(unlisten => { if (active) stop = unlisten; else unlisten(); }).catch(() => {});
+  return () => { active = false; stop?.(); };
+}
 
 export function onRuntimeUpdate(callback: (snapshot: RuntimeSnapshot) => void, onInitialError?: (error: unknown) => void): RuntimeUnlisten {
   let active = true;

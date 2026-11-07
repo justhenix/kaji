@@ -10,6 +10,7 @@ fn main() {
             "gui_update_install",
             "gui_save_settings",
             "gui_get_engine_status",
+            "gui_shortcut_status",
             "gui_set_mode",
             "gui_toggle_head_control",
             "gui_toggle_voice",

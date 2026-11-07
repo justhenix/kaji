@@ -38,17 +38,20 @@ try {
         if (command === 'gui_update_install') { update = { ...update, phase: 'error', message: 'Couldn’t download and verify the update. Try again.' }; return update; }
         if (command === 'gui_get_settings') return saved;
         if (command === 'gui_get_runtime') return structuredClone(snapshot);
+        if (command === 'gui_emergency_stop') { harness.__emergencyStops = (harness.__emergencyStops ?? 0) + 1; return; }
+        if (command === 'gui_shortcut_status') return Array.from({length: 6}, (_, id) => ({id, available: id !== 1, reason: id === 1 ? 'This shortcut is already in use by another app.' : null}));
         if (command === 'plugin:event|listen') {
           listeners.set(args.event, [...(listeners.get(args.event) ?? []), args.handler]); return ++next;
         }
         if (command === 'plugin:event|unlisten') return;
         if (command === 'gui_dispatch' && args.action.type === 'services.refresh') {
+          if (harness.__failConnection) throw new Error('Connection failed');
           const recovered = ++checks > 1;
           snapshot.message = 'Checking speech and reasoning services';
           setTimeout(() => {
-            if (recovered) for (const key of Object.keys(snapshot.services)) snapshot.services[key] = { available: true, model: 'Connected', reason: '' };
+            if (recovered) for (const key of Object.keys(snapshot.services)) snapshot.services[key] = { available: !harness.__partialConnection || key !== 'tts', model: 'Connected', reason: key === 'tts' && harness.__partialConnection ? 'Spoken feedback is unavailable.' : '' };
             snapshot.message = 'Service status updated'; emit();
-          }, 50);
+          }, harness.__connectionDelay ?? 50);
           return structuredClone(snapshot);
         }
         if (command === 'gui_save_settings') {
@@ -70,7 +73,23 @@ try {
   assert.equal(await page.locator('#ai-service-state').getByText('couldn’t sign in', { exact: false }).count(), 1);
   await page.getByRole('button', { name: 'Check connection', exact: true }).click();
   await expect(page.locator('.service-row.available')).toHaveCount(5);
+  await expect(page.locator('#ai-connection-result')).toContainText('Connected to Kaji. All 5 services are ready. Checked at');
   await expect(page.getByRole('button', { name: 'Check connection', exact: true })).toBeEnabled();
+  await page.evaluate(() => (window as any).__connectionDelay = 300);
+  await page.getByRole('button', {name: 'Check connection', exact: true}).click();
+  await expect(page.locator('#ai-connection-result')).toContainText('Checking the connection');
+  await expect(page.getByRole('button', {name: 'Checking…', exact: true})).toBeDisabled();
+  await expect(page.locator('#ai-connection-result')).toContainText('All 5 services are ready');
+  await page.evaluate(() => (window as any).__partialConnection = true);
+  await page.getByRole('button', {name: 'Check connection', exact: true}).click();
+  await expect(page.locator('#ai-connection-result')).toContainText('4 of 5 services are available');
+  await page.evaluate(() => (window as any).__failConnection = true);
+  await page.getByRole('button', {name: 'Check connection', exact: true}).click();
+  await expect(page.locator('#ai-connection-result')).toContainText('Connection check failed');
+  await expect(page.getByRole('button', {name: 'Check connection', exact: true})).toBeEnabled();
+  await page.evaluate(() => { (window as any).__failConnection = false; (window as any).__partialConnection = false; });
+  await page.getByRole('button', {name: 'Check connection', exact: true}).click();
+  await expect(page.locator('#ai-connection-result')).toContainText('All 5 services are ready');
   await page.screenshot({ path: resolve(import.meta.dir, '../verification/screenshots/settings-connection-recovered.png') });
   await page.getByRole('button', { name: 'Appearance', exact: true }).click();
   await page.locator('.theme-card[data-theme="light"]').click();
@@ -89,6 +108,20 @@ try {
   await page.getByRole('button', { name: 'Install and restart', exact: true }).click();
   await expect(page.locator('[data-update-status]')).toContainText('download and verify');
   await expect(page.getByRole('button', { name: 'Check for updates', exact: true })).toBeEnabled();
+  await page.getByRole('button', {name: 'Shortcuts', exact: true}).click();
+  await expect(page.locator('.keycap-badge')).toHaveCount(7);
+  await expect(page.getByText('Show Kaji', {exact: true})).toBeVisible();
+  await expect(page.getByText('Start or stop voice input', {exact: true})).toBeVisible();
+  await expect(page.getByText('This shortcut is already in use by another app.', {exact: true})).toBeVisible();
+  await page.screenshot({path: resolve(import.meta.dir, '../verification/screenshots/settings-shortcuts-followup.png')});
+  await page.locator('label.toggle-switch').click();
+  await expect(page.getByLabel('Keyboard shortcuts', {exact: true})).not.toBeChecked();
+  await page.getByRole('button', {name: 'Save changes', exact: true}).click();
+  await expect(page.locator('#settings-save-btn')).toContainText('Saving');
+  await page.evaluate(() => (window as any).__finishSave());
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('saved-settings')!).enable_shortcuts), false);
+  await page.keyboard.press('Escape');
+  await expect.poll(() => page.evaluate(() => (window as any).__emergencyStops)).toBe(1);
   assert.deepEqual(errors, []);
-  console.log('PASS: 401 recovery, Save/Close/reopen, update offer and failed-download retry. No devices or provider calls.');
+  console.log('PASS: connection success/partial/failure/recheck feedback, shortcut conflict/toggle, settings persistence, and update retry. No devices or provider calls.');
 } finally { await browser.close(); server.stop(true); }

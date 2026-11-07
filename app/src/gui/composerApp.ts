@@ -1,5 +1,5 @@
 import { AgentMark, type AgentState } from './components/AgentMark';
-import { dispatchRuntime, onRuntimeUpdate, openMainWindow, openSettingsWindow, setComposerFrame, startWindowDrag } from './ipc';
+import { dispatchRuntime, onRuntimeUpdate, onShortcutError, openMainWindow, openSettingsWindow, setComposerFrame, startWindowDrag } from './ipc';
 import { store } from './store';
 import type { ArtifactReference, PendingQuestion, RuntimeAction, RuntimeSnapshot } from '../../shared/runtime';
 import { taskRequestAction } from './methodChoice';
@@ -276,9 +276,6 @@ export class Composer {
     window.addEventListener('resize', () => this.availableWidth());
     window.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape' || !this.currentPanel) return;
-      if (this.question && this.currentPanel === 'question') {
-        if (this.question.taskId) this.emit({ type: 'dismiss', taskId: this.question.taskId, questionId: this.question.id });
-      }
       void this.openPanel(null, false).then(() => this.prompt.focus({ preventScroll: true }));
     });
   }
@@ -651,6 +648,7 @@ async function initComposer(): Promise<void> {
     composer.showReply(phase === 'complete' && snapshot.task ? snapshot.task.id : null, snapshot.task?.artifacts ?? []);
   };
   const unlisten = onRuntimeUpdate(apply, () => composer.update({ state: 'failed', message: 'Kaji runtime is unavailable.' }));
+  const stopShortcutErrors = onShortcutError(message => composer.update({ state: 'failed', message }));
   const onAction = async (event: Event) => {
     const action = (event as CustomEvent<ComposerAction>).detail;
     let command: RuntimeAction;
@@ -678,7 +676,7 @@ async function initComposer(): Promise<void> {
     }
   };
   window.addEventListener('kaji:composer-action', onAction);
-  window.addEventListener('pagehide', () => { unlisten(); window.removeEventListener('kaji:composer-action', onAction); }, { once: true });
+  window.addEventListener('pagehide', () => { unlisten(); stopShortcutErrors(); window.removeEventListener('kaji:composer-action', onAction); }, { once: true });
   await unlisten.ready;
 }
 

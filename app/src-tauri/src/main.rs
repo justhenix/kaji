@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod shortcuts;
+
 use kaji_engine::{
     control::Frame,
     engine::{Engine, Session},
@@ -291,6 +293,9 @@ fn gui_save_settings(
     let previous = state.get_settings()?;
     state.save_settings(settings.clone())?;
     runtime.update_history_settings(&settings)?;
+    if let Some(shortcuts) = app.try_state::<shortcuts::Shortcuts>() {
+        shortcuts.configure(settings.clone())?;
+    }
     if previous.voice_activation != settings.voice_activation {
         runtime.dispatch(RuntimeAction::Listen {
             enabled: settings.voice_activation,
@@ -304,6 +309,13 @@ fn gui_save_settings(
 #[tauri::command]
 fn gui_get_engine_status(state: State<'_, Arc<GuiManager>>) -> Result<EngineGuiStatus, String> {
     state.get_status()
+}
+
+#[tauri::command]
+fn gui_shortcut_status(app: tauri::AppHandle) -> Result<Vec<shortcuts::ShortcutStatus>, String> {
+    app.try_state::<shortcuts::Shortcuts>()
+        .ok_or("Keyboard shortcuts are unavailable.")?
+        .status()
 }
 
 #[tauri::command]
@@ -327,13 +339,8 @@ fn gui_pause_all(state: State<'_, Arc<GuiManager>>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn gui_emergency_stop(
-    state: State<'_, Arc<GuiManager>>,
-    runtime: State<'_, Arc<RuntimeManager>>,
-) -> Result<(), String> {
-    state.emergency_stop()?;
-    let _ = runtime.dispatch(RuntimeAction::Stop { task_id: None });
-    Ok(())
+fn gui_emergency_stop(runtime: State<'_, Arc<RuntimeManager>>) -> Result<(), String> {
+    runtime.emergency_stop()
 }
 
 #[tauri::command]
@@ -858,6 +865,7 @@ fn main() {
             gui_get_settings,
             gui_save_settings,
             gui_get_engine_status,
+            gui_shortcut_status,
             gui_set_mode,
             gui_toggle_head_control,
             gui_toggle_voice,
@@ -1100,18 +1108,26 @@ fn main() {
                 .on_navigation(is_local_app_url)
                 .build()?;
                 configure_overlay_host(&overlay)?;
+                app.manage(shortcuts::Shortcuts::start(
+                    app.handle().clone(),
+                    gui_mgr.clone(),
+                    runtime_mgr.clone(),
+                )?);
                 runtime_mgr.start_overlay_follow();
             }
             Ok(())
         })
         .build(tauri::generate_context!());
     match runtime {
-        Ok(app) => app.run(move |_app, event| {
+        Ok(app) => app.run(move |app, event| {
             if matches!(
                 event,
                 tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
             ) {
                 shutdown_runtime.shutdown();
+                if let Some(shortcuts) = app.try_state::<shortcuts::Shortcuts>() {
+                    shortcuts.shutdown();
+                }
                 let _ = engine.stop("Tauri host exit");
             }
         }),

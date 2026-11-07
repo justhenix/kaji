@@ -15,6 +15,9 @@ export interface TaskContext {
   targetWindow: string | null;
   selectedFile: { name: string; extension: string } | null;
   vision: boolean;
+  mode?: Mode;
+  voice?: { wakePhrase: string; wakeEnabled: boolean; listening: boolean; recognitionLanguage: string; recognitionLanguages: string[]; transcriptionAvailable: boolean; spokenFeedbackEnabled: boolean; spokenFeedbackAvailable: boolean };
+  headControl?: { enabled: boolean; active: boolean; dwellEnabled: boolean };
 }
 
 export function desktopTools(native: NativeSession, mode: Mode, methods: (options: Executor[], recommended: string, splitScreen?: PendingQuestion['splitScreen']) => void, approval: (id: string, title: string) => void): AgentTool[] {

@@ -1,11 +1,11 @@
 {
-  "version": "0.1.3",
-  "pub_date": "2026-11-07T12:50:44.494Z",
-  "notes": "Improved Hey Kaji recognition, adaptive speech pauses, and replies that stay through spoken feedback.",
+  "version": "0.1.4",
+  "pub_date": "2026-11-07T14:01:21.140Z",
+  "notes": "Windows keyboard shortcuts, clear connection-check results, and accurate voice capability answers.",
   "platforms": {
     "windows-x86_64": {
-      "url": "https://ae5rkunkhbjgx5zz.public.blob.vercel-storage.com/windows/v0.1.3/Kaji-0.1.3-x64-setup.exe",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVkVaTW91MklhMTIvdUpRRDlVd2h4eU5yVWd0ODJFQkl5OWlFL0RDU0Mrc3dxcllZSm9KWk84cWVQTXl1S0ZndXNjbTlzRENUc2xFTGFHSW9jNnd4MXpvRzV5S2hNQ0E0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDU1NjgzCWZpbGU6S2FqaV8wLjEuM194NjQtc2V0dXAuZXhlCXZlcnNpb246MC4xLjMKUDFMMW9vNzdzY29DbHhxa1RFM0F4WURyem1kaUoxOG45Qm5SVmM3aU5sU0k4NXRVR29EcUVPZUNVcm4zenpkU2RvcFM4dnlTNkV3Q2NmdDhtQ3JhQUE9PQo="
+      "url": "https://ae5rkunkhbjgx5zz.public.blob.vercel-storage.com/windows/v0.1.4/Kaji-0.1.4-x64-setup.exe",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVkVaTW91MklhMXg1a0ZyOEtyTUc4N3NyNDF1TS9rcUN4cmg0cHpRdEZCbWxDQW1KNVJMUlBpa2F4dDExZzBzNUZQVDRVRzFNaFoybml5amRpYnNtanZPMlhiQ0U4T2dnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDYwMDEyCWZpbGU6S2FqaV8wLjEuNF94NjQtc2V0dXAuZXhlCXZlcnNpb246MC4xLjQKVjRRcXN5VXhvdm9QQmtNMzlKTmFMTnhQR00wQkZKb3NLMnJjZlpiQ0QrdmVPTEQzL3E5M21DY2wzbFlqVDIydk9CQlQ5emozY3NCUWRLcG9qc24zREE9PQo="
     }
   }
 }

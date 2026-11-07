@@ -47,6 +47,7 @@ static HOOKS_ACTIVE: AtomicBool = AtomicBool::new(false);
 #[derive(Default)]
 pub struct Signals {
     pub emergency: AtomicBool,
+    pub emergency_epoch: AtomicU64,
     pub manual: AtomicU64,
     pub observer_alive: AtomicBool,
     pub observer_pulse: AtomicU64,
@@ -706,6 +707,7 @@ unsafe extern "system" fn keyboard_hook(code: i32, w: WPARAM, l: LPARAM) -> LRES
                 && (w.0 as u32 == WM_KEYDOWN || w.0 as u32 == WM_SYSKEYDOWN)
             {
                 signals.emergency.store(true, Ordering::SeqCst);
+                signals.emergency_epoch.fetch_add(1, Ordering::SeqCst);
             }
             if event.dwExtraInfo != INPUT_TAG {
                 signals.manual.fetch_add(1, Ordering::SeqCst);
