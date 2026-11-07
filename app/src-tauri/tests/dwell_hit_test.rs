@@ -1,10 +1,53 @@
-use kaji_engine::control::Point;
+use kaji_engine::{
+    control::Point,
+    native::{self, Rect},
+};
+use serde_json::{Value, json};
 use std::{
     io::{BufRead, BufReader, Write},
-    process::{Command, Stdio},
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::mpsc,
     time::Duration,
 };
+
+struct Client {
+    child: Child,
+    input: ChildStdin,
+    output: BufReader<ChildStdout>,
+}
+impl Client {
+    fn new(exe: &str) -> Self {
+        let mut child = Command::new(exe)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let input = child.stdin.take().unwrap();
+        let output = BufReader::new(child.stdout.take().unwrap());
+        Self {
+            child,
+            input,
+            output,
+        }
+    }
+    fn request(&mut self, command: Value) -> Value {
+        writeln!(self.input, "{command}").unwrap();
+        self.input.flush().unwrap();
+        let mut line = String::new();
+        self.output.read_line(&mut line).unwrap();
+        let response: Value = serde_json::from_str(&line).unwrap();
+        response["result"]
+            .get("Ok")
+            .unwrap_or_else(|| panic!("native read-only request failed: {response}"))
+            .clone()
+    }
+}
+impl Drop for Client {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
 use windows::{
     Win32::{
         Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
@@ -26,10 +69,11 @@ unsafe extern "system" fn fixture(hwnd: HWND, message: u32, w: WPARAM, l: LPARAM
 
 #[test]
 #[ignore = "briefly shows an inert Windows fixture; reads real UIA targets without clicking"]
-fn dwell_allows_enabled_controls_but_not_disabled_text_or_blank_space() {
+fn dwell_and_guide_highlight_only_real_enabled_controls() {
     kaji_engine::native::dpi_aware();
     let (tx, rx) = mpsc::sync_channel(1);
     let host = std::thread::spawn(move || unsafe {
+        native::dpi_aware();
         let module = GetModuleHandleW(None).unwrap();
         let class = WNDCLASSW {
             hInstance: module.into(),
@@ -54,6 +98,7 @@ fn dwell_allows_enabled_controls_but_not_disabled_text_or_blank_space() {
         )
         .unwrap();
         let mut points = Vec::new();
+        let mut rects = Vec::new();
         for (class, name, x, y, style) in [
             (w!("BUTTON"), w!("Enabled"), 20, 20, WS_TABSTOP),
             (w!("BUTTON"), w!("Disabled"), 180, 20, WS_DISABLED),
@@ -80,9 +125,15 @@ fn dwell_allows_enabled_controls_but_not_disabled_text_or_blank_space() {
                 x: f64::from(r.left + r.right) / 2.,
                 y: f64::from(r.top + r.bottom) / 2.,
             });
+            rects.push(Rect {
+                left: r.left,
+                top: r.top,
+                right: r.right,
+                bottom: r.bottom,
+            });
         }
         points.push(Point { x: 270., y: 150. });
-        tx.send((root.0 as isize, points)).unwrap();
+        tx.send((root.0 as isize, points, rects)).unwrap();
         let mut message = MSG::default();
         while GetMessageW(&mut message, None, 0, 0).0 > 0 {
             let _ = TranslateMessage(&message);
@@ -90,55 +141,48 @@ fn dwell_allows_enabled_controls_but_not_disabled_text_or_blank_space() {
         }
         let _ = UnregisterClassW(w!("KajiDwellFixture"), Some(module.into()));
     });
-    let (hwnd, points) = rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    let (hwnd, points, rects) = rx.recv_timeout(Duration::from_secs(3)).unwrap();
     let result = std::panic::catch_unwind(|| {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_kaji-diag"))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let mut input = child.stdin.take().unwrap();
-        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        let mut client = Client::new(env!("CARGO_BIN_EXE_kaji-diag"));
         for (i, point) in points.into_iter().enumerate() {
-            writeln!(
-                input,
-                "{}",
-                serde_json::json!({"id":i,"command":"hit_test","point":point})
-            )
-            .unwrap();
-            input.flush().unwrap();
-            let response: serde_json::Value =
-                serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap();
-            let target = response["result"]
-                .get("Ok")
-                .expect("bounded hit-test failed");
+            let target = client.request(json!({"id":i,"command":"hit_test","point":point}));
             assert_eq!(!target.is_null(), i == 0, "fixture target {i}: {target:?}");
             if i == 0 {
+                assert_eq!(target["rect"], json!(rects[0]));
                 for repeat in 0..5 {
-                    writeln!(
-                        input,
-                        "{}",
-                        serde_json::json!({"id":20+repeat,"command":"hit_test","point":point})
-                    )
-                    .unwrap();
-                    input.flush().unwrap();
-                    let again: serde_json::Value =
-                        serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap();
+                    let again =
+                        client.request(json!({"id":20+repeat,"command":"hit_test","point":point}));
                     assert_eq!(
-                        &again["result"]["Ok"], target,
+                        again, target,
                         "same control changed identity between probes"
                     );
                 }
             }
         }
-        writeln!(
-            input,
-            "{}",
-            serde_json::json!({"id":9,"command":"shutdown"})
-        )
-        .unwrap();
-        drop(input);
-        assert!(child.wait().unwrap().success());
+        drop(client);
+        let pointer = native::cursor().unwrap();
+        let foreground = native::foreground();
+        let mut client = Client::new(env!("CARGO_BIN_EXE_kaji-assist"));
+        let status = client.request(json!({"id":1,"command":"begin","hwnd":hwnd,"mode":"guide"}));
+        let session = status["session"].as_u64().unwrap();
+        let snapshot = client.request(json!({"id":2,"command":"inspect","session":session}));
+        let button = snapshot["elements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|element| element["name"] == "Enabled")
+            .unwrap();
+        let cursor = client
+            .request(json!({"id":3,"command":"point","session":session,"element_id":button["id"]}));
+        assert_eq!(cursor["target"], json!(rects[0]));
+        assert_eq!(cursor["target_name"], "Enabled");
+        assert_eq!(cursor["point"], json!(rects[0].center()));
+        assert_eq!(
+            native::cursor().unwrap(),
+            pointer,
+            "Highlighting moved the user's cursor"
+        );
+        assert_eq!(native::foreground(), foreground, "Highlighting stole focus");
     });
     unsafe {
         let _ = PostMessageW(Some(HWND(hwnd as _)), WM_CLOSE, WPARAM(0), LPARAM(0));

@@ -45,3 +45,20 @@ test('only an agent target displays the independent pointer with the correct hot
   expect(task.cursor!.left + task.cursor!.width * 54 / 400).toBeCloseTo(1915);
   expect(task.cursor!.top + task.cursor!.width * 34 / 400).toBeCloseTo(1075);
 });
+
+test('head dwell highlights the detected control without drawing an agent pointer', () => {
+  const state = {
+    mode: 'follow' as const, point: { x: 40, y: 35 }, target: { left: 10, top: 20, right: 130, bottom: 60 },
+    targetLabel: 'Hold still to click', dwellProgress: 0.3, cursorEnabled: false, highlightEnabled: true,
+    viewport: { left: 0, top: 0, width: 1920, height: 1080, scaleFactor: 1 },
+  };
+  expect(overlayGeometry(state)?.target).toEqual({ left: 10, top: 20, width: 120, height: 40 });
+  expect(overlayGeometry(state)?.cursor).toBeNull();
+  for (const value of [
+    { ...state, target: null },
+    { ...state, mode: 'hidden' as const },
+    { ...state, highlightEnabled: false },
+    { ...state, target: { left: 10, top: 20, right: 10, bottom: 60 } },
+    { ...state, target: { left: NaN, top: 20, right: 130, bottom: 60 } },
+  ]) expect(overlayGeometry(value)?.target).toBeNull();
+});

@@ -272,6 +272,33 @@ pub struct OverlayState {
     pub monitor_scale_factor: Option<f64>,
 }
 
+impl OverlayState {
+    fn point_at(&mut self, cursor: &crate::assist::IntentCursor) {
+        self.mode = OverlayMode::Task;
+        self.point = Some(cursor.point);
+        self.target = Some(cursor.target);
+        let name = one_line(&cursor.target_name);
+        self.target_label = if name.trim().is_empty() {
+            "Next control".into()
+        } else {
+            format!("Next: {}", name.chars().take(100).collect::<String>())
+        };
+        self.dwell_progress = 0.;
+    }
+
+    fn clear_target(&mut self) {
+        self.mode = if self.cursor_enabled || self.highlight_enabled {
+            OverlayMode::Follow
+        } else {
+            OverlayMode::Hidden
+        };
+        self.point = None;
+        self.target = None;
+        self.target_label.clear();
+        self.dwell_progress = 0.;
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum OverlayMode {
@@ -648,7 +675,7 @@ impl RuntimeManager {
                     transcript: String::new(),
                 },
                 overlay: OverlayState {
-                    mode: if cursor_enabled {
+                    mode: if cursor_enabled || settings.action_highlight {
                         OverlayMode::Follow
                     } else {
                         OverlayMode::Hidden
@@ -1241,14 +1268,7 @@ impl RuntimeManager {
                     inner.pending_approval = None;
                     inner.desktop_approval = None;
                     inner.capture = None;
-                    inner.snapshot.overlay.mode = if inner.snapshot.overlay.cursor_enabled {
-                        OverlayMode::Follow
-                    } else {
-                        OverlayMode::Hidden
-                    };
-                    inner.snapshot.overlay.target = None;
-                    inner.snapshot.overlay.target_label.clear();
-                    inner.snapshot.overlay.point = native::cursor().ok();
+                    inner.snapshot.overlay.clear_target();
                 }
                 "resume" => {}
                 "stop" => {
@@ -1259,14 +1279,7 @@ impl RuntimeManager {
                     inner.active_target_id = None;
                     inner.step = None;
                     inner.selected_file = None;
-                    inner.snapshot.overlay.mode = if inner.snapshot.overlay.cursor_enabled {
-                        OverlayMode::Follow
-                    } else {
-                        OverlayMode::Hidden
-                    };
-                    inner.snapshot.overlay.target = None;
-                    inner.snapshot.overlay.target_label.clear();
-                    inner.snapshot.overlay.point = native::cursor().ok();
+                    inner.snapshot.overlay.clear_target();
                 }
                 _ => unreachable!(),
             }
@@ -1492,12 +1505,10 @@ impl RuntimeManager {
             }
             if let Some(step) = step {
                 inner.step = Some(step);
-                inner.snapshot.overlay.mode = OverlayMode::Task;
                 if let Ok(status) = self.assist.status()
                     && let Some(cursor) = status.cursor
                 {
-                    inner.snapshot.overlay.point = Some(cursor.point);
-                    inner.snapshot.overlay.target_label = cursor.element_id;
+                    inner.snapshot.overlay.point_at(&cursor);
                 }
             }
             inner.snapshot.overlay.mode = if inner
@@ -1506,13 +1517,15 @@ impl RuntimeManager {
                 .as_ref()
                 .is_some_and(|task| task.phase == TaskPhase::Paused)
             {
-                if inner.snapshot.overlay.cursor_enabled {
+                if inner.snapshot.overlay.cursor_enabled || inner.snapshot.overlay.highlight_enabled
+                {
                     OverlayMode::Follow
                 } else {
                     OverlayMode::Hidden
                 }
-            } else if inner.snapshot.overlay.target.is_some()
-                || !inner.snapshot.overlay.target_label.is_empty()
+            } else if inner.snapshot.overlay.mode == OverlayMode::Task
+                && (inner.snapshot.overlay.target.is_some()
+                    || !inner.snapshot.overlay.target_label.is_empty())
             {
                 OverlayMode::Task
             } else {
@@ -1579,14 +1592,7 @@ impl RuntimeManager {
             inner.active_target_id = None;
             inner.step = None;
             inner.selected_file = None;
-            inner.snapshot.overlay.mode = if inner.snapshot.overlay.cursor_enabled {
-                OverlayMode::Follow
-            } else {
-                OverlayMode::Hidden
-            };
-            inner.snapshot.overlay.point = native::cursor().ok();
-            inner.snapshot.overlay.target = None;
-            inner.snapshot.overlay.target_label.clear();
+            inner.snapshot.overlay.clear_target();
             inner.snapshot.revision = inner.snapshot.revision.wrapping_add(1);
             changed = true;
         }
@@ -1679,6 +1685,14 @@ impl RuntimeManager {
         if !self.task_is_current(&task_id, Some(generation)) {
             return;
         }
+        if let Ok(mut inner) = self.inner.lock() {
+            if response.is_err() {
+                inner.snapshot.overlay.clear_target();
+            }
+            inner.snapshot.revision = inner.snapshot.revision.wrapping_add(1);
+        }
+        // Publish the target before the agent can dispatch its next command.
+        self.emit_current();
         let input = match response {
             Ok(result) => DesktopHostInput::NativeResponse {
                 id,
@@ -1813,6 +1827,7 @@ impl RuntimeManager {
                 self.check_session(session)?;
                 if let Ok(mut inner) = self.inner.lock() {
                     inner.uia_attempted = true;
+                    inner.snapshot.overlay.clear_target();
                 }
                 serde_json::to_value(self.assist.inspect(session)?).map_err(|e| e.to_string())
             }
@@ -1823,9 +1838,7 @@ impl RuntimeManager {
                 self.check_session(session)?;
                 let cursor = self.assist.point(session, &element_id)?;
                 if let Ok(mut inner) = self.inner.lock() {
-                    inner.snapshot.overlay.mode = OverlayMode::Task;
-                    inner.snapshot.overlay.point = Some(cursor.point);
-                    inner.snapshot.overlay.target_label = cursor.element_id.clone();
+                    inner.snapshot.overlay.point_at(&cursor);
                 }
                 serde_json::to_value(cursor).map_err(|e| e.to_string())
             }
@@ -2207,6 +2220,8 @@ impl RuntimeManager {
         });
         if let PhysicalAction::Click { x, y } | PhysicalAction::Scroll { x, y, .. } = action {
             inner.snapshot.overlay.point = Some(crate::control::Point { x, y });
+            inner.snapshot.overlay.target = None;
+            inner.snapshot.overlay.dwell_progress = 0.;
             inner.snapshot.overlay.target_label = window.title.clone();
             inner.snapshot.overlay.mode = OverlayMode::Task;
         }
@@ -2447,14 +2462,7 @@ impl RuntimeManager {
             inner.step = None;
             inner.task_generation = inner.task_generation.wrapping_add(1);
             inner.snapshot.voice.session_id = inner.snapshot.voice.session_id.wrapping_add(1);
-            inner.snapshot.overlay.mode = if inner.snapshot.overlay.cursor_enabled {
-                OverlayMode::Follow
-            } else {
-                OverlayMode::Hidden
-            };
-            inner.snapshot.overlay.point = native::cursor().ok();
-            inner.snapshot.overlay.target = None;
-            inner.snapshot.overlay.target_label.clear();
+            inner.snapshot.overlay.clear_target();
         }
         if let Ok(agent) = self.current_agent() {
             let _ = agent.send(&DesktopHostInput::Stop {
@@ -2492,11 +2500,30 @@ impl RuntimeManager {
     }
 
     fn follow_overlay_tick(&self, refresh_display: bool) {
+        // User input invalidates a Guide target without another agent command.
+        let invalidated = self.inner.lock().is_ok_and(|mut inner| {
+            if inner.snapshot.overlay.mode == OverlayMode::Task
+                && inner.snapshot.overlay.target.is_some()
+                && inner.native_session_id.is_some()
+                && self
+                    .assist
+                    .status()
+                    .is_ok_and(|status| status.cursor.is_none())
+            {
+                inner.snapshot.overlay.clear_target();
+                true
+            } else {
+                false
+            }
+        });
+        if invalidated {
+            self.emit_current();
+        }
         let Ok(inner) = self.inner.lock() else {
             return;
         };
         if inner.snapshot.overlay.mode != OverlayMode::Follow
-            || !inner.snapshot.overlay.cursor_enabled
+            || (!inner.snapshot.overlay.cursor_enabled && !inner.snapshot.overlay.highlight_enabled)
         {
             return;
         }
@@ -2513,12 +2540,13 @@ impl RuntimeManager {
         };
         let previous = overlay.clone();
         overlay.point = point;
-        overlay.dwell_progress = if head_enabled {
-            self.engine
-                .status()
-                .map_or(0., |status| status.dwell_progress)
+        let status = head_enabled.then(|| self.engine.status().ok()).flatten();
+        overlay.target = status.as_ref().and_then(|status| status.dwell_target);
+        overlay.dwell_progress = status.as_ref().map_or(0., |status| status.dwell_progress);
+        overlay.target_label = if overlay.target.is_some() {
+            "Hold still to click".into()
         } else {
-            0.
+            String::new()
         };
         if previous == overlay && !refresh_display {
             return;
@@ -2544,7 +2572,7 @@ impl RuntimeManager {
             return;
         };
         if inner.snapshot.overlay.mode != OverlayMode::Follow
-            || !inner.snapshot.overlay.cursor_enabled
+            || (!inner.snapshot.overlay.cursor_enabled && !inner.snapshot.overlay.highlight_enabled)
         {
             return;
         }
@@ -3740,6 +3768,38 @@ fn unavailable_services(reason: &str) -> ServiceCapabilities {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn target_overlay_uses_validated_bounds_and_a_readable_name_then_clears() {
+        let mut overlay = fallback_snapshot().overlay;
+        overlay.highlight_enabled = true;
+        let bounds = Rect {
+            left: -1400,
+            top: 10,
+            right: -1280,
+            bottom: 50,
+        };
+        let mut cursor = crate::assist::IntentCursor {
+            revision: 4,
+            element_id: "opaque-uia-id".into(),
+            point: bounds.center(),
+            target: bounds,
+            target_name: "Align Center".into(),
+        };
+        overlay.point_at(&cursor);
+        assert_eq!(overlay.mode, OverlayMode::Task);
+        assert_eq!(overlay.target, Some(bounds));
+        assert_eq!(overlay.point, Some(bounds.center()));
+        assert_eq!(overlay.target_label, "Next: Align Center");
+        cursor.target_name.clear();
+        overlay.point_at(&cursor);
+        assert_eq!(overlay.target_label, "Next control");
+        overlay.clear_target();
+        assert_eq!(overlay.mode, OverlayMode::Follow);
+        assert!(overlay.target.is_none());
+        assert!(overlay.point.is_none());
+        assert!(overlay.target_label.is_empty());
+    }
 
     fn method_question() -> PendingQuestion {
         PendingQuestion {

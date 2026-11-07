@@ -17,7 +17,7 @@ test('JSONL accepts the selected enabled model and rejects unregistered models',
   expect(()=>parseInput(JSON.stringify({...start,authorization:'forged'}))).toThrow();
 });
 const status = (): NativeStatus => ({
-  session: 7, phase: "active", reason: "active", hwnd: 123, cursor: { revision: 1, element_id: "e1", point: { x: 10, y: 10 } },
+  session: 7, phase: "active", reason: "active", hwnd: 123, cursor: { revision: 1, element_id: "e1", point: { x: 10, y: 10 }, target: { left: 0, top: 0, right: 20, bottom: 20 }, target_name: "Result" },
   physical_cursor: null, foreground_hwnd: 123, last_backend: "uia", actions: 0, inspection_required: false,
   verification_pending: false, last_outcome: null, mode: "agent", confirmation: null,
 });
