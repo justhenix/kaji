@@ -1,5 +1,7 @@
 # Aksesa audit
 
+This audit records the P0 decisions. A later [collaborative Pi harness](COLLABORATIVE-HARNESS.md) adds a separate, scoped developer runtime; it does not change the head-control policy described here.
+
 Reference inspected through the connected GitHub account at commit
 `4deef432dffafd4daa4924889e552856b3728631`. Kaji is a new implementation; no Aksesa source was copied.
 

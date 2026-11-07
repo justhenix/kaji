@@ -16,6 +16,10 @@ path = "src/main.rs"
 name = "kaji-diag"
 path = "src/bin/diag.rs"
 
+[[bin]]
+name = "kaji-assist"
+path = "src/bin/assist.rs"
+
 [build-dependencies]
 tauri-build = { version = "=2.7.4", features = [] }
 
@@ -24,12 +28,16 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "=2.12.5", features = [] }
 tempfile = "3"
+rusqlite = { version = "=0.41.1", features = ["bundled"] }
+png = "=0.18.1"
 windows = { version = "=0.62.2", features = [
   "Win32_Foundation", "Win32_System_Com", "Win32_System_Ole",
   "Win32_System_Variant", "Win32_System_Threading", "Win32_System_LibraryLoader",
   "Win32_UI_Accessibility", "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_Graphics_Gdi",
-  "Win32_System_StationsAndDesktops", "Win32_Security", "Win32_System_JobObjects"
+  "Win32_System_StationsAndDesktops", "Win32_Security", "Win32_System_JobObjects",
+  "Win32_Storage_Xps", "Win32_Security_Cryptography", "Win32_UI_Controls_Dialogs",
+  "Win32_Networking_WinHttp", "Win32_UI_Shell"
 ] }
 
 [profile.release]

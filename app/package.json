@@ -6,16 +6,28 @@
   "scripts": {
     "assets": "bun scripts/assets.ts",
     "build:worker": "bun scripts/build.ts",
+    "build:agent": "bun scripts/build-agent.ts",
+    "build:python": "bun scripts/build-python.ts",
+    "build:resources": "bun run build:worker && bun run build:agent && bun run build:python",
     "check": "tsc --noEmit",
-    "test": "bun test src scripts",
+    "test": "bun test src scripts agent",
+    "python:test": "src-tauri/target/debug/python/python.exe -I python/test_worker.py",
+    "test:desktop": "bun scripts/verify-desktop.ts",
+    "test:frontend": "bun scripts/verify-frontend.ts",
+    "agent": "bun agent/cli.ts",
+    "workflow": "bun agent/workflow-cli.ts",
     "native:test": "cargo test --locked --manifest-path src-tauri/Cargo.toml",
     "native:build": "cargo build --locked --manifest-path src-tauri/Cargo.toml --bins",
-    "build": "bun run build:worker && bun run native:build",
+    "build": "bun run build:resources && bun run native:build",
+    "package:windows": "tauri build --config src-tauri/tauri.package.conf.json --bundles nsis",
     "tauri": "tauri",
     "diagnose": "cargo run --manifest-path src-tauri/Cargo.toml --bin kaji-diag --"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
     "@mediapipe/tasks-vision": "1.2.0",
+    "@sherpaw/kws": "0.3.0",
     "@tauri-apps/api": "2.12.4"
   },
   "devDependencies": {

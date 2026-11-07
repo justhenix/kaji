@@ -1,5 +1,5 @@
 use crate::{
-    control::{Config, Frame},
+    control::{Config, Frame, Point},
     engine::Engine,
     uia::Inspector,
 };
@@ -13,6 +13,9 @@ use std::{
 #[derive(Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 enum Command {
+    HitTest {
+        point: Point,
+    },
     Inspect {
         hwnd: Option<isize>,
     },
@@ -81,6 +84,17 @@ pub fn serve(engine: Arc<Engine>, inspector: Arc<Inspector>, allow_replay: bool)
             };
             let id = request.id;
             match request.command {
+                Command::HitTest { point } => {
+                    let out = output.clone();
+                    let service = inspector.clone();
+                    scope.spawn(move || {
+                        reply(
+                            &out,
+                            id,
+                            service.hit_test(point).map(|target| json!(target)),
+                        )
+                    });
+                }
                 Command::Inspect { hwnd } => {
                     let out = output.clone();
                     let service = inspector.clone();

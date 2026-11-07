@@ -10,6 +10,8 @@ Bun monorepo:
 
 The Windows interaction engine lives in [`app/`](app/README.md): Tauri v2, local MediaPipe head tracking, Rust-owned Win32 execution, and isolated UI Automation inspection. See its [current verification report](app/docs/LIVE-TRACKING-FIX.md) for executed checks and incomplete human acceptance.
 
+An optional [collaborative Pi harness](app/docs/COLLABORATIVE-HARNESS.md) uses a separate logical cursor and native semantic actions so other-window activity can continue.
+
 ## Website
 
 Use Bun 1.4.2 or newer. From the repository root:

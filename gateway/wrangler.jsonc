@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kaji-gateway",
+  "main": "src/index.ts",
+  "account_id": "8b6649a3d7a9cd8ef3547a9cae94257a",
+  "compatibility_date": "2026-11-02",
+  "compatibility_flags": ["enable_request_signal"],
+  "workers_dev": true,
+  "vars": { "BAI_VISION_VERIFIED": "deepseek-v4.1-flash", "REASONING_DAILY_REQUEST_CAP": "500" },
+  "observability": { "enabled": false },
+  "durable_objects": { "bindings": [{ "name": "OWNER_BUDGET", "class_name": "OwnerBudget" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OwnerBudget"] }],
+  "ratelimits": [
+    { "name": "REQUEST_LIMIT", "namespace_id": "58132411", "simple": { "limit": 12, "period": 60 } }
+  ]
+}

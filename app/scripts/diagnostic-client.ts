@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { nativeTargetDir } from './native-output';
 
 export class DiagnosticClient {
   readonly process;
@@ -6,7 +7,7 @@ export class DiagnosticClient {
   private pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   readonly stderr: Promise<string>;
   constructor(binary = "kaji-diag", args: string[] = []) {
-    this.process = Bun.spawn([resolve(import.meta.dir, `../src-tauri/target/debug/${binary}.exe`), ...args], { stdin: "pipe", stdout: "pipe", stderr: "pipe", windowsHide: true });
+    this.process = Bun.spawn([resolve(nativeTargetDir, `debug/${binary}.exe`), ...args], { stdin: "pipe", stdout: "pipe", stderr: "pipe", windowsHide: true });
     this.stderr = new Response(this.process.stderr).text();
     void this.read();
   }

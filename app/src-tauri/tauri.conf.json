@@ -3,12 +3,12 @@
   "productName": "Kaji",
   "version": "0.1.0",
   "identifier": "id.kaji.engine",
-  "build": { "frontendDist": "../dist", "beforeBuildCommand": "bun run build:worker" },
+  "build": { "frontendDist": "../dist", "beforeBuildCommand": "bun run build:resources" },
   "app": {
     "windows": [],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' blob:; media-src 'self' blob:",
-      "capabilities": ["sensor"]
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'",
+      "capabilities": ["sensor", "gui", "audio", "overlay"]
     }
   },
   "bundle": { "active": false }

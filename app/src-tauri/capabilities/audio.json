@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "audio",
+  "description": "Hidden local audio host. Listens for native controls and returns audio through the typed runtime command.",
+  "webviews": ["audio"],
+  "local": true,
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-gui-dispatch",
+    "allow-gui-get-runtime",
+    "allow-gui-get-settings"
+  ]
+}

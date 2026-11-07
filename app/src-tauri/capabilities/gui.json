@@ -1,0 +1,28 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "gui",
+  "description": "Permissions for Kaji main and settings GUI windows.",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging",
+    "allow-gui-get-settings",
+    "allow-gui-dispatch",
+    "allow-gui-get-runtime",
+    "allow-gui-history-list",
+    "allow-gui-history-get",
+    "allow-gui-save-settings",
+    "allow-gui-get-engine-status",
+    "allow-gui-set-mode",
+    "allow-gui-toggle-head-control",
+    "allow-gui-toggle-voice",
+    "allow-gui-pause-all",
+    "allow-gui-emergency-stop",
+    "allow-gui-set-view",
+    "allow-gui-open-github",
+    "allow-gui-calibrate",
+    "allow-gui-window-minimize",
+    "allow-gui-window-close"
+  ]
+}

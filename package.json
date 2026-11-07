@@ -2,7 +2,7 @@
   "name": "kaji",
   "private": true,
   "packageManager": "bun@1.4.2",
-  "workspaces": ["web", "app"],
+  "workspaces": ["web", "app", "gateway"],
   "scripts": {
     "dev": "bun run --cwd web dev",
     "check": "bun run --cwd web check",
