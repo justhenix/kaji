@@ -276,9 +276,6 @@ export class Composer {
     window.addEventListener('resize', () => this.availableWidth());
     window.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape' || !this.currentPanel) return;
-      if (this.question && this.currentPanel === 'question') {
-        if (this.question.taskId) this.emit({ type: 'dismiss', taskId: this.question.taskId, questionId: this.question.id });
-      }
       void this.openPanel(null, false).then(() => this.prompt.focus({ preventScroll: true }));
     });
   }

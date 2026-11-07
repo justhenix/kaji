@@ -88,6 +88,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+if (isTauri && getCurrentWindow().label === 'main') {
+  // Accessibility input can reach WebView2 without passing through the Windows keyboard hook.
+  window.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !event.repeat) {
+      void invoke('gui_emergency_stop').catch(error => console.error('Emergency stop failed', error));
+    }
+  });
+}
 let browserStatus: EngineGuiStatus = {
   phase: 'offline', reason: '', mode: 'assist', head_control_active: false,
   voice_active: false, is_paused: false, session_id: 0,

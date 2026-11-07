@@ -1,11 +1,11 @@
 {
   "version": "0.1.4",
-  "pub_date": "2026-11-07T13:47:54.806Z",
+  "pub_date": "2026-11-07T14:01:21.140Z",
   "notes": "Windows keyboard shortcuts, clear connection-check results, and accurate voice capability answers.",
   "platforms": {
     "windows-x86_64": {
       "url": "https://ae5rkunkhbjgx5zz.public.blob.vercel-storage.com/windows/v0.1.4/Kaji-0.1.4-x64-setup.exe",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVkVaTW91MklhMTRRV3dxcGc1TlRCM2pxZytLOG5uKytJUDJZam53ZkRnaU1Uekt1ZFA5KytNOGxhb2YxQVRON0tWK214SkNhUytNdURGSlI5OFlEQkNKUEkrNTFhL2dJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDU5MTI0CWZpbGU6S2FqaV8wLjEuNF94NjQtc2V0dXAuZXhlCXZlcnNpb246MC4xLjQKaUJjNWxiT2ZmVWJPZnc0dnRPR2xEckwzL3hFdyt0VkpBdEN5ZkU4eHQwVUwwTzFjVjM2L0kycGc4ekdqalJ6N1VNbzA4Nmd0dFVkMXZveVQ0Q09wQWc9PQo="
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVkVaTW91MklhMXg1a0ZyOEtyTUc4N3NyNDF1TS9rcUN4cmg0cHpRdEZCbWxDQW1KNVJMUlBpa2F4dDExZzBzNUZQVDRVRzFNaFoybml5amRpYnNtanZPMlhiQ0U4T2dnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDYwMDEyCWZpbGU6S2FqaV8wLjEuNF94NjQtc2V0dXAuZXhlCXZlcnNpb246MC4xLjQKVjRRcXN5VXhvdm9QQmtNMzlKTmFMTnhQR00wQkZKb3NLMnJjZlpiQ0QrdmVPTEQzL3E5M21DY2wzbFlqVDIydk9CQlQ5emozY3NCUWRLcG9qc24zREE9PQo="
     }
   }
 }

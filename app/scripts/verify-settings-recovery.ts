@@ -38,6 +38,7 @@ try {
         if (command === 'gui_update_install') { update = { ...update, phase: 'error', message: 'Couldn’t download and verify the update. Try again.' }; return update; }
         if (command === 'gui_get_settings') return saved;
         if (command === 'gui_get_runtime') return structuredClone(snapshot);
+        if (command === 'gui_emergency_stop') { harness.__emergencyStops = (harness.__emergencyStops ?? 0) + 1; return; }
         if (command === 'gui_shortcut_status') return Array.from({length: 6}, (_, id) => ({id, available: id !== 1, reason: id === 1 ? 'This shortcut is already in use by another app.' : null}));
         if (command === 'plugin:event|listen') {
           listeners.set(args.event, [...(listeners.get(args.event) ?? []), args.handler]); return ++next;
@@ -119,6 +120,8 @@ try {
   await expect(page.locator('#settings-save-btn')).toContainText('Saving');
   await page.evaluate(() => (window as any).__finishSave());
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('saved-settings')!).enable_shortcuts), false);
+  await page.keyboard.press('Escape');
+  await expect.poll(() => page.evaluate(() => (window as any).__emergencyStops)).toBe(1);
   assert.deepEqual(errors, []);
   console.log('PASS: connection success/partial/failure/recheck feedback, shortcut conflict/toggle, settings persistence, and update retry. No devices or provider calls.');
 } finally { await browser.close(); server.stop(true); }

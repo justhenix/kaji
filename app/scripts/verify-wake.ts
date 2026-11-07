@@ -118,6 +118,11 @@ try {
   assert(!emergencyStopped.head.enabled && !emergencyStopped.head.active, 'Emergency stop left head control running');
   await invoke(main, 'gui_dispatch', {action: {type: 'resume'}});
   console.log('PASS: emergency stop ends active capture and head control');
+  await invoke(main, 'gui_dispatch', {action: {type: 'listen', enabled: true, immediate: true}});
+  await main.keyboard.press('Escape');
+  await expect.poll(async () => (await invoke<RuntimeSnapshot>(main, 'gui_get_runtime')).voice.enabled).toBe(false);
+  await invoke(main, 'gui_dispatch', {action: {type: 'resume'}});
+  console.log('PASS: Escape delivered inside the WebView also ends capture');
   await invoke(main, 'gui_dispatch', {action: {type: 'listen', enabled: false}});
   const audio = browser.contexts().flatMap((context: {pages(): Page[]}) => context.pages()).find((page: Page) => page.url().endsWith('/audio.html'))!;
   await audio.reload();
