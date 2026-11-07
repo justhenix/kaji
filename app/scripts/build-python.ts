@@ -88,7 +88,7 @@ export async function buildPython(): Promise<void> {
     await Bun.write(join(staging, 'python314._pth'), 'python314.zip\n.\nLib\\site-packages\n');
     await cp(join(root, 'python/worker.py'), join(staging, 'worker.py'));
     const verify = Bun.spawn([
-      join(staging, 'python.exe'), '-I', '-c',
+      join(staging, 'python.exe'), '-I', '-B', '-c',
       `import sys, docx, lxml.etree, typing_extensions; assert sys.version.split()[0] == '${pythonVersion}'; assert docx.__version__ == '1.2.0'; assert lxml.etree.LXML_VERSION[:3] == (6, 1, 3); assert sys.flags.isolated`,
     ], { stdin: 'ignore', stdout: 'inherit', stderr: 'inherit', windowsHide: true });
     if (await verify.exited !== 0) throw new Error('Bundled Python dependency verification failed');
