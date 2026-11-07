@@ -1,0 +1,11 @@
+{
+  "version": "0.1.2",
+  "pub_date": "2026-11-07T08:55:56.606Z",
+  "notes": "Automatic device setup and signed in-app updates.",
+  "platforms": {
+    "windows-x86_64": {
+      "url": "https://ae5rkunkhbjgx5zz.public.blob.vercel-storage.com/windows/v0.1.2/Kaji-0.1.2-x64-setup.exe",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVkVaTW91MklhMTAyakdCWXNuamxnSVEvWnphWkJLTy9ObkpZdFRlUDBac0hZUHR2aGs3MjJ2Y0xZajVDVUdkdEYvUDk4TEQ4UTFwbWhrcU40UEdsUTNDUDZyWWs2TUFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDQxNjk2CWZpbGU6S2FqaV8wLjEuMl94NjQtc2V0dXAuZXhlCXZlcnNpb246MC4xLjIKZDBPWWx5ZGFIcXRCU1RTdmV5KytsQVU4T3hSaFdISCtyLzZ6UGZPeWUzUzRJcmV0bXhwWW5pN0xqeW9TWER6QkhCd0VJMVFUYTc4cnF3bHhyNjVrRGc9PQo="
+    }
+  }
+}

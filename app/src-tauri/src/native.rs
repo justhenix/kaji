@@ -13,7 +13,10 @@ use windows::Win32::{
         LRESULT, LocalFree, POINT, WPARAM,
     },
     Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO},
-    Security::Cryptography::{CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN, CryptUnprotectData},
+    Security::Cryptography::{
+        BCRYPT_USE_SYSTEM_PREFERRED_RNG, BCryptGenRandom, CRYPT_INTEGER_BLOB,
+        CRYPTPROTECT_UI_FORBIDDEN, CryptProtectData, CryptUnprotectData,
+    },
     System::{
         Com::CoTaskMemFree,
         LibraryLoader::GetModuleHandleW,
@@ -210,8 +213,8 @@ pub fn current_process_id() -> u32 {
     unsafe { GetCurrentProcessId() }
 }
 
-pub fn load_gateway_token() -> Result<String> {
-    let path = match std::env::var_os("KAJI_GATEWAY_CREDENTIAL_PATH") {
+pub fn gateway_credential_path() -> Result<PathBuf> {
+    Ok(match std::env::var_os("KAJI_GATEWAY_CREDENTIAL_PATH") {
         Some(path) => PathBuf::from(path),
         None => unsafe {
             let folder = SHGetKnownFolderPath(&FOLDERID_LocalAppData, KF_FLAG_DEFAULT, None)
@@ -220,7 +223,11 @@ pub fn load_gateway_token() -> Result<String> {
             CoTaskMemFree(Some(folder.0.cast()));
             path.join("Kaji").join("gateway-token.dpapi")
         },
-    };
+    })
+}
+
+pub fn load_gateway_token() -> Result<String> {
+    let path = gateway_credential_path()?;
     let mut encoded = fs::read_to_string(&path)
         .map_err(|_| "Kaji gateway credential is unavailable for this Windows account")?;
     let decoded = decode_hex(encoded.trim())?;
@@ -229,6 +236,65 @@ pub fn load_gateway_token() -> Result<String> {
         return Err("Kaji gateway credential has invalid encrypted size".into());
     }
     unprotect_gateway_token(decoded)
+}
+
+pub fn new_device_token() -> Result<String> {
+    let mut bytes = [0u8; 32];
+    unsafe { BCryptGenRandom(None, &mut bytes, BCRYPT_USE_SYSTEM_PREFERRED_RNG) }
+        .ok()
+        .map_err(|_| "Could not create a private device login")?;
+    let token = format!(
+        "kd_{}",
+        bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+    wipe(&mut bytes);
+    Ok(token)
+}
+
+pub fn save_gateway_token(token: &str) -> Result<()> {
+    validate_gateway_token(token)?;
+    let path = gateway_credential_path()?;
+    let parent = path.parent().ok_or("Device login folder is unavailable")?;
+    fs::create_dir_all(parent).map_err(|_| "Could not create the device login folder")?;
+    let mut plaintext = token.as_bytes().to_vec();
+    let input = CRYPT_INTEGER_BLOB {
+        cbData: plaintext.len() as u32,
+        pbData: plaintext.as_mut_ptr(),
+    };
+    let mut output = CRYPT_INTEGER_BLOB::default();
+    let protected = unsafe {
+        CryptProtectData(
+            &input,
+            None,
+            None,
+            None,
+            None,
+            CRYPTPROTECT_UI_FORBIDDEN,
+            &mut output,
+        )
+    };
+    wipe(&mut plaintext);
+    protected.map_err(|_| "Could not protect the device login for this Windows account")?;
+    let encrypted = unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize) };
+    let encoded = encrypted
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    unsafe {
+        let _ = LocalFree(Some(HLOCAL(output.pbData.cast())));
+    }
+    use std::io::Write;
+    let mut file =
+        tempfile::NamedTempFile::new_in(parent).map_err(|_| "Could not save the device login")?;
+    file.write_all(encoded.as_bytes())
+        .and_then(|_| file.as_file().sync_all())
+        .map_err(|_| "Could not save the device login")?;
+    file.persist(&path)
+        .map_err(|_| "Could not save the device login")?;
+    Ok(())
 }
 
 fn decode_hex(value: &str) -> Result<Vec<u8>> {

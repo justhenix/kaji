@@ -37,5 +37,11 @@ try {
   await worker.stop(); worker = await start();
   const persisted = await call("/service/status", JSON.stringify({ service: "tts", ...usage }));
   assert.equal(persisted.used, 9996);
+  const registration = JSON.stringify({ digest: 'a'.repeat(64), ip: 'b'.repeat(64) });
+  assert.equal((await worker.fetch('http://budget/devices/enroll', { method: 'POST', body: registration })).status, 200);
+  await worker.stop(); worker = await start();
+  assert.equal((await worker.fetch('http://budget/devices/authorize', { method: 'POST', body: JSON.stringify({ digest: 'a'.repeat(64), scope: 'session' }) })).status, 200);
+  assert.equal((await worker.fetch('http://budget/devices/authorize', { method: 'POST', body: JSON.stringify({ digest: 'c'.repeat(64), scope: 'session' }) })).status, 401);
+  console.log('PASS: Device enrollment persists in the actual SQLite binding and unregistered credentials remain rejected.');
   console.log("PASS: actual workerd/SQLite binding serializes owner and service quotas, rejects forged release, and persists reservations across restart. No model requests.");
 } finally { await worker.stop(); }

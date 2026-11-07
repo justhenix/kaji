@@ -27,11 +27,15 @@ try {
       for (const id of listeners.get('kaji:runtime-update') ?? []) callbacks.get(id)?.({ payload: structuredClone(snapshot) });
     };
     harness.__closed = false;
+    let update = { phase: 'idle', currentVersion: '0.1.2', version: null as string | null, downloaded: 0, total: null, message: '' };
     harness.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener(event: string) { listeners.delete(event); } };
     harness.__TAURI_INTERNALS__ = {
       metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
       transformCallback(callback: (event: unknown) => void) { const id = ++next; callbacks.set(id, callback); return id; },
       async invoke(command: string, args: any = {}) {
+        if (command === 'gui_update_status') return update;
+        if (command === 'gui_update_check') { update = { ...update, phase: 'available', version: '0.1.3' }; return update; }
+        if (command === 'gui_update_install') { update = { ...update, phase: 'error', message: 'Couldn’t download and verify the update. Try again.' }; return update; }
         if (command === 'gui_get_settings') return saved;
         if (command === 'gui_get_runtime') return structuredClone(snapshot);
         if (command === 'plugin:event|listen') {
@@ -79,6 +83,12 @@ try {
   await expect.poll(() => page.evaluate(() => (window as any).__closed)).toBe(true);
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.getByRole('button', { name: 'General', exact: true }).click();
+  await page.getByRole('button', { name: 'Check for updates', exact: true }).click();
+  await expect(page.locator('[data-update-status]')).toContainText('Version 0.1.3 is ready');
+  await page.getByRole('button', { name: 'Install and restart', exact: true }).click();
+  await expect(page.locator('[data-update-status]')).toContainText('download and verify');
+  await expect(page.getByRole('button', { name: 'Check for updates', exact: true })).toBeEnabled();
   assert.deepEqual(errors, []);
-  console.log('PASS: 401 recovery, one connection error, and Save/Close/reopen preserve Light mode. No devices or provider calls.');
+  console.log('PASS: 401 recovery, Save/Close/reopen, update offer and failed-download retry. No devices or provider calls.');
 } finally { await browser.close(); server.stop(true); }

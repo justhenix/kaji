@@ -3,6 +3,8 @@ import { GATEWAY_MODELS } from '../../app/shared/models';
 export { OwnerBudget } from "./budget";
 export { STT_MODEL, TTS_MODEL, TITLE_MODEL, TTS_MONTHLY_CREDIT_CAP } from "./services";
 import { handleServiceRequest, type ServiceEnv } from "./services";
+import { sha256, type DeviceBinding } from './devices';
+export { DeviceRegistry } from './devices';
 const ENDPOINT = "https://api.b.ai/v1/chat/completions";
 const BODY_LIMIT = 2 * 1024 * 1024;
 export interface Env extends ServiceEnv {
@@ -12,6 +14,8 @@ export interface Env extends ServiceEnv {
   NINE_ROUTER_API_KEY?: string;
   NINE_ROUTER_BASE_URL?: string;
   GATEWAY_TOKEN_SHA256: string;
+  DEVICES?: DeviceBinding;
+  ENROLL_LIMIT?: Env['REQUEST_LIMIT'];
   REQUEST_LIMIT: { limit(input: { key: string }): Promise<{ success: boolean }> };
   OWNER_BUDGET: { idFromName(name: string): unknown; get(id: unknown): { fetch(url: string, init?: RequestInit): Promise<Response> } };
 }
@@ -97,9 +101,27 @@ async function readBody(request: Request): Promise<string> {
 export async function handle(request: Request, env: Env, upstream: Upstream = fetch): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === "/health" && request.method === "GET") return new Response(JSON.stringify({ service: "kaji-gateway", model: MODEL }), { headers });
+  if (url.pathname === '/v1/devices/enroll' && request.method === 'POST' && !url.search) {
+    if (request.headers.has('origin')) return error(403, 'Browser access is not enabled');
+    if (!env.DEVICES || !env.ENROLL_LIMIT) return error(503, 'Device setup is temporarily unavailable');
+    const token = /^Bearer (kd_[a-f0-9]{64})$/.exec(request.headers.get('authorization') ?? '')?.[1];
+    if (!token) return error(400, 'Invalid device registration');
+    const ip = request.headers.get('cf-connecting-ip');
+    if (!ip) return error(503, 'Device setup is temporarily unavailable');
+    try {
+      const hashedIp = await sha256(ip);
+      if (!(await env.ENROLL_LIMIT.limit({ key: hashedIp })).success) return error(429, 'Device setup is busy. Try again shortly.');
+      const enrolled = await env.DEVICES.get(env.DEVICES.idFromName('devices-v1')).fetch('https://devices/enroll', {
+        method: 'POST', body: JSON.stringify({ digest: await sha256(token), ip: hashedIp }),
+      });
+      return enrolled.ok ? new Response(JSON.stringify({ connected: true }), { headers })
+        : error(enrolled.status, enrolled.status === 429 ? 'Device setup is busy. Try again later.' : 'Device access is unavailable');
+    } catch { return error(503, 'Device setup is temporarily unavailable'); }
+  }
+  const session = url.pathname === '/v1/devices/session' && request.method === 'GET';
   const services = ["/v1/audio/transcriptions", "/v1/audio/speech", "/v1/chat/titles", "/v1/capabilities"];
   const chat = url.pathname === "/v1/chat/completions";
-  if ((!chat && !services.includes(url.pathname)) || url.search) return error(404, "Not found");
+  if ((!chat && !session && !services.includes(url.pathname)) || url.search) return error(404, "Not found");
   if (chat && request.method !== "POST") return error(405, "POST required");
   if (url.pathname === "/v1/capabilities" && request.method !== "GET") return error(405, "GET required");
   if (services.slice(0, 3).includes(url.pathname) && request.method !== "POST") return error(405, "POST required");
@@ -109,8 +131,23 @@ export async function handle(request: Request, env: Env, upstream: Upstream = fe
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
   const expected = Uint8Array.from(env.GATEWAY_TOKEN_SHA256.match(/../g)!, byte => parseInt(byte, 16));
   let difference = 0; for (let i = 0; i < digest.length; i++) difference |= digest[i]! ^ expected[i]!;
-  if (difference) return error(401, "Authentication required");
   if (request.headers.has("origin")) return error(403, "Browser access is not enabled");
+  let requestIdentity = 'kaji-owner';
+  if (difference) {
+    if (!/^kd_[a-f0-9]{64}$/.test(token) || !env.DEVICES) return error(401, 'Authentication required');
+    try {
+      const deviceHash = await sha256(token);
+      if (!env.REQUEST_LIMIT || !(await env.REQUEST_LIMIT.limit({ key: deviceHash })).success) return error(429, 'Request limit reached; try later');
+      const scope = session ? 'session' : chat ? 'chat' : url.pathname.endsWith('/capabilities') ? 'capabilities'
+        : url.pathname.endsWith('/transcriptions') ? 'stt' : url.pathname.endsWith('/speech') ? 'tts' : 'titles';
+      const decision = await env.DEVICES.get(env.DEVICES.idFromName('devices-v1')).fetch('https://devices/authorize', {
+        method: 'POST', body: JSON.stringify({ digest: deviceHash, scope }),
+      });
+      if (!decision.ok) return error(decision.status, decision.status === 429 ? 'Device daily allowance reached; try tomorrow' : 'Authentication required');
+      requestIdentity = deviceHash;
+    } catch { return error(503, 'Device service unavailable'); }
+  }
+  if (session) return new Response(JSON.stringify({ connected: true }), { headers });
   if (!chat) return handleServiceRequest(url.pathname, request, env, upstream);
   if (!env.REQUEST_LIMIT) return error(503, "Gateway is not configured");
   if (!/^application\/json(?:;|$)/i.test(request.headers.get("content-type") ?? "")) return error(415, "JSON required");
@@ -129,7 +166,7 @@ export async function handle(request: Request, env: Env, upstream: Upstream = fe
     } catch { return error(503, "Router endpoint is not configured"); }
     body.reasoning_effort = String(body.model).endsWith('-high') ? 'high' : 'medium';
   }
-  try { if (!(await env.REQUEST_LIMIT.limit({ key: "kaji-owner" })).success) return error(429, "Request limit reached; try later"); }
+  try { if (requestIdentity === 'kaji-owner' && !(await env.REQUEST_LIMIT.limit({ key: requestIdentity })).success) return error(429, "Request limit reached; try later"); }
   catch { return error(503, "Rate limiter unavailable"); }
 
   const budget = env.OWNER_BUDGET.get(env.OWNER_BUDGET.idFromName("owner-v1"));

@@ -40,7 +40,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   // AI & Models
   ai_provider: 'cloud',
-  model: 'Kaji Pro',
+  model: 'ag/gemini-3.8-flash-medium',
   capabilities_screen: true,
   capabilities_vision: true,
   capabilities_actions: true,

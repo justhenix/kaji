@@ -2,6 +2,7 @@ use crate::{Result, native};
 use serde::Deserialize;
 use serde_json::Value;
 use std::ffi::c_void;
+use std::sync::Mutex;
 use windows::Win32::Networking::WinHttp::{
     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_FLAG_SECURE, WINHTTP_OPTION_REDIRECT_POLICY,
     WINHTTP_OPTION_REDIRECT_POLICY_NEVER, WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_QUERY_STATUS_CODE,
@@ -14,6 +15,39 @@ const MAX_STT_RESPONSE: usize = 64 * 1024;
 const MAX_TITLE_RESPONSE: usize = 32 * 1024;
 const MAX_CAPABILITY_RESPONSE: usize = 256 * 1024;
 const MAX_TTS_RESPONSE: usize = 10 * 1024 * 1024;
+static CONNECTED: Mutex<bool> = Mutex::new(false);
+
+pub fn connected_token() -> Result<String> {
+    let mut connected = CONNECTED
+        .lock()
+        .map_err(|_| "Device connection is unavailable")?;
+    let mut token = match native::load_gateway_token() {
+        Ok(token) => token,
+        Err(error) if native::gateway_credential_path()?.exists() => return Err(error),
+        Err(_) => {
+            let token = native::new_device_token()?;
+            native::save_gateway_token(&token)?;
+            token
+        }
+    };
+    if *connected {
+        return Ok(token);
+    }
+    let response = request_with_token("GET", "/v1/devices/session", &[], 4096, &token)?;
+    if response.status == 401 {
+        if !token.starts_with("kd_") {
+            wipe_string(&mut token);
+            token = native::new_device_token()?;
+        }
+        let enrolled = request_with_token("POST", "/v1/devices/enroll", &[], 4096, &token)?;
+        success_json(enrolled, "Automatic device setup")?;
+        native::save_gateway_token(&token)?;
+    } else {
+        success_json(response, "Device connection")?;
+    }
+    *connected = true;
+    Ok(token)
+}
 
 pub struct GatewayResponse {
     pub status: u32,
@@ -126,10 +160,30 @@ fn request(
     body: &[u8],
     response_limit: usize,
 ) -> Result<GatewayResponse> {
+    let mut token = connected_token()?;
+    let mut result = request_with_token(method, path, body, response_limit, &token);
+    if result.as_ref().is_ok_and(|response| response.status == 401) {
+        *CONNECTED
+            .lock()
+            .map_err(|_| "Device connection is unavailable")? = false;
+        wipe_string(&mut token);
+        token = connected_token()?;
+        result = request_with_token(method, path, body, response_limit, &token);
+    }
+    wipe_string(&mut token);
+    result
+}
+
+fn request_with_token(
+    method: &str,
+    path: &str,
+    body: &[u8],
+    response_limit: usize,
+    token: &str,
+) -> Result<GatewayResponse> {
     if !matches!(method, "GET" | "POST") || !path.starts_with("/v1/") || path.contains(['?', '#']) {
         return Err("invalid gateway route".into());
     }
-    let mut token = native::load_gateway_token()?;
     let user_agent = windows::core::w!("Kaji");
     let session = Handle::new(
         unsafe {
@@ -176,7 +230,7 @@ fn request(
     }
     .map_err(|_| "gateway redirect policy could not be set")?;
 
-    let header = format!(
+    let mut header = format!(
         "Authorization: Bearer {token}\r\n{}\r\n",
         if method == "POST" {
             "Content-Type: application/json"
@@ -185,6 +239,7 @@ fn request(
         }
     );
     let mut headers: Vec<u16> = header.encode_utf16().chain([0]).collect();
+    wipe_string(&mut header);
     let sent = unsafe {
         WinHttpSendRequest(
             request.0,
@@ -196,7 +251,6 @@ fn request(
         )
     };
     wipe_wide(&mut headers);
-    wipe_string(&mut token);
     sent.map_err(|_| "gateway request could not be sent")?;
     unsafe { WinHttpReceiveResponse(request.0, std::ptr::null_mut()) }
         .map_err(|_| "gateway response unavailable")?;
@@ -258,9 +312,10 @@ fn service_error(body: &[u8], status: u32, service: &str) -> String {
     let message = serde_json::from_slice::<Value>(body)
         .ok()
         .and_then(|value| {
-            value
-                .get("error")
-                .and_then(Value::as_str)
+            let error = value.get("error")?;
+            error
+                .as_str()
+                .or_else(|| error.get("message").and_then(Value::as_str))
                 .map(str::to_owned)
         });
     if status == 429 {

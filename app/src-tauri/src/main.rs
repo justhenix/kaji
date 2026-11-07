@@ -838,6 +838,8 @@ fn main() {
         };
     let shutdown_runtime = runtime_mgr.clone();
     let runtime = tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(Arc::new(kaji_engine::updates::UpdateManager::default()))
         .manage(SensorState {
             engine: engine.clone(),
             session: sensor_session.clone(),
@@ -847,6 +849,9 @@ fn main() {
         .manage(gui_mgr.clone())
         .manage(runtime_mgr.clone())
         .invoke_handler(tauri::generate_handler![
+            kaji_engine::updates::gui_update_status,
+            kaji_engine::updates::gui_update_check,
+            kaji_engine::updates::gui_update_install,
             sensor_ready,
             sensor_frame,
             sensor_fault,
@@ -870,6 +875,12 @@ fn main() {
         ])
         .setup(move |app| {
             runtime_mgr.attach_app(app.handle().clone());
+            if !camera {
+                let _ = runtime_mgr.dispatch(RuntimeAction::ServicesRefresh);
+            }
+            if !camera && gui_mgr.get_settings()?.check_updates {
+                kaji_engine::updates::start(app.handle().clone());
+            }
             if camera {
                 // Standalone sensor view for camera harness / diagnostic testing
                 WebviewWindowBuilder::new(
