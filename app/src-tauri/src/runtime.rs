@@ -242,6 +242,8 @@ pub struct VoiceState {
     pub reason: String,
     pub audio_level: f64,
     pub transcript: String,
+    #[serde(default)]
+    pub pending_speech: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -673,6 +675,7 @@ impl RuntimeManager {
                     reason: "Voice starts when enabled".into(),
                     audio_level: 0.0,
                     transcript: String::new(),
+                    pending_speech: None,
                 },
                 overlay: OverlayState {
                     mode: if cursor_enabled || settings.action_highlight {
@@ -2906,6 +2909,7 @@ impl RuntimeManager {
             voice.audio_level = 0.;
             voice.transcript.clear();
             voice.reason.clear();
+            voice.pending_speech = None;
         } else {
             self.emit_audio_control(json!({ "type": "stop" }))?;
             self.gui.toggle_voice(false)?;
@@ -2915,6 +2919,7 @@ impl RuntimeManager {
                 inner.snapshot.voice.phase = VoicePhase::Off;
                 inner.snapshot.voice.audio_level = 0.0;
                 inner.snapshot.voice.reason = "Voice is off".into();
+                inner.snapshot.voice.pending_speech = None;
             }
         }
         Ok(())
@@ -3180,6 +3185,7 @@ impl RuntimeManager {
         }
         inner.snapshot.voice.phase = phase;
         if matches!(phase, VoicePhase::Off | VoicePhase::Error) {
+            inner.snapshot.voice.pending_speech = None;
             if inner.snapshot.voice.enabled {
                 inner.snapshot.voice.session_id = inner.snapshot.voice.session_id.wrapping_add(1);
             }
@@ -3443,13 +3449,21 @@ impl RuntimeManager {
         if text.is_empty() {
             return;
         }
-        let Ok(inner) = self.inner.lock() else { return };
+        let app = self.app.lock().ok().and_then(|app| app.clone());
+        let Some(app) = app else { return };
+        let Ok(mut inner) = self.inner.lock() else {
+            return;
+        };
         if inner.snapshot.active_conversation_id.as_deref() != Some(conversation_id) {
             return;
         }
         let voice_session_id = inner.snapshot.voice.session_id;
+        let utterance_id = new_id("speech");
+        inner.snapshot.voice.pending_speech = Some(utterance_id.clone());
         let conversation_id = conversation_id.to_owned();
         drop(inner);
+        self.bump_revision();
+        self.emit_current();
         let runtime = Arc::downgrade(self);
         let voice_id = settings.speech_voice_id;
         let key = (conversation_id.to_owned(), text.clone(), voice_id.clone());
@@ -3458,26 +3472,30 @@ impl RuntimeManager {
             .lock()
             .ok()
             .and_then(|cache| cache.get(&key).cloned());
-        let app = self.app.lock().ok().and_then(|app| app.clone());
-        let Some(app) = app else { return };
         let volume = settings.response_volume as f64 / 100.0;
         let output_device = settings.speaker;
         let cache = self.speech_cache.clone();
-        thread::Builder::new()
+        let pending_id = utterance_id.clone();
+        let spawned = thread::Builder::new()
             .name("kaji-tts-request".into())
             .spawn(move || {
                 let audio = cached.or_else(|| gateway_client::speech(&text, Some(&voice_id)).ok());
-                let Some(audio) = audio else { return };
                 let Some(runtime) = runtime.upgrade() else {
+                    return;
+                };
+                let Some(audio) = audio else {
+                    runtime.finish_synthesis(&utterance_id);
                     return;
                 };
                 if !runtime.inner.lock().is_ok_and(|inner| {
                     inner.snapshot.voice.session_id == voice_session_id
+                        && inner.snapshot.voice.pending_speech.as_deref() == Some(&utterance_id)
                         && inner.snapshot.active_conversation_id.as_deref()
                             == Some(conversation_id.as_str())
                 }) || !runtime.gui.get_settings().is_ok_and(|settings| {
                     settings.voice_feedback && settings.speech_voice_id == voice_id
                 }) {
+                    runtime.finish_synthesis(&utterance_id);
                     return;
                 }
                 if audio.len() <= 2 * 1024 * 1024
@@ -3492,7 +3510,7 @@ impl RuntimeManager {
                 }
                 let payload = json!({
                     "type": "play",
-                    "utteranceId": new_id("speech"),
+                    "utteranceId": utterance_id,
                     "voiceSessionId": voice_session_id,
                     "conversationId": conversation_id,
                     "audioBase64": base64_encode(&audio),
@@ -3501,8 +3519,25 @@ impl RuntimeManager {
                     "outputDeviceId": output_device,
                 });
                 let _ = app.emit_to("audio", AUDIO_CONTROL_EVENT, payload);
-            })
-            .ok();
+                runtime.finish_synthesis(&utterance_id);
+            });
+        if spawned.is_err() {
+            self.finish_synthesis(&pending_id);
+        }
+    }
+
+    fn finish_synthesis(&self, utterance_id: &str) {
+        let changed = self.inner.lock().is_ok_and(|mut inner| {
+            if inner.snapshot.voice.pending_speech.as_deref() != Some(utterance_id) {
+                return false;
+            }
+            inner.snapshot.voice.pending_speech = None;
+            true
+        });
+        if changed {
+            self.bump_revision();
+            self.emit_current();
+        }
     }
 }
 
@@ -3577,6 +3612,7 @@ fn fallback_snapshot() -> RuntimeSnapshot {
             reason: "Runtime state unavailable".into(),
             audio_level: 0.0,
             transcript: String::new(),
+            pending_speech: None,
         },
         overlay: OverlayState {
             mode: OverlayMode::Hidden,

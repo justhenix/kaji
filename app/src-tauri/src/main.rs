@@ -23,10 +23,10 @@ use windows::Win32::{
     Foundation::HWND,
     Graphics::Gdi::{CombineRgn, CreateRoundRectRgn, DeleteObject, RGN_OR, SetWindowRgn},
     UI::WindowsAndMessaging::{
-        GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
-        SWP_NOSIZE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, WS_CAPTION, WS_EX_NOACTIVATE,
-        WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU,
-        WS_THICKFRAME,
+        GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos,
+        ShowWindow, WS_CAPTION, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+        WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU, WS_THICKFRAME,
     },
 };
 
@@ -1038,7 +1038,14 @@ fn main() {
                         });
                     }
                 });
-                window.show()?;
+                if composer {
+                    // Showing an idle composer must preserve the user's active application.
+                    unsafe {
+                        let _ = ShowWindow(HWND(window.hwnd()?.0), SW_SHOWNOACTIVATE);
+                    }
+                } else {
+                    window.show()?;
+                }
 
                 // Background sensor window for head-control capability
                 let _ =

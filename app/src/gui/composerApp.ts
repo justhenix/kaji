@@ -27,6 +27,7 @@ export interface ComposerUpdate {
   answer?: string;
   audioLevel?: number;
   voicePhase?: RuntimeSnapshot['voice']['phase'];
+  speechPending?: boolean;
   failureSettings?: 'voice' | 'head' | null;
   dwellEnabled?: boolean;
   dwellReady?: boolean;
@@ -81,7 +82,9 @@ export class Composer {
   private frameUpdates = Promise.resolve();
   private leaving = false;
   private replyTaskId: string | null = null;
+  private replyTimer: ReturnType<typeof setTimeout> | undefined;
   private voicePhase: RuntimeSnapshot['voice']['phase'] = 'off';
+  private speechPending = false;
   private failureSettings: 'voice' | 'head' | null = null;
 
   constructor(root: HTMLElement) {
@@ -282,6 +285,7 @@ export class Composer {
 
   update(update: ComposerUpdate): void {
     if (update.questionId && update.questionId !== this.question?.id) return;
+    const speechWasBusy = this.speechPending || this.voicePhase === 'speaking';
     const wasDwellReady = this.dwellReady && this.dwellEnabled && this.headPhase === 'tracking';
     const showFailure = update.state === 'failed' && this.state !== 'failed';
     if (update.question !== undefined) {
@@ -295,6 +299,9 @@ export class Composer {
     }
     if (update.state) this.state = update.state;
     if (update.voicePhase !== undefined) this.voicePhase = update.voicePhase;
+    if (update.speechPending !== undefined) this.speechPending = update.speechPending;
+    if (this.state !== 'ready' || this.question || this.speechPending || this.voicePhase === 'speaking') clearTimeout(this.replyTimer);
+    else if (speechWasBusy && this.replyTaskId) this.scheduleReplyDismiss();
     if (update.failureSettings !== undefined) this.failureSettings = update.failureSettings;
     if (update.message !== undefined) this.get('.composer-notice-text').textContent = update.message;
     if (update.transcript !== undefined) {
@@ -477,6 +484,7 @@ export class Composer {
 
   showReply(taskId: string | null, artifacts: ArtifactReference[]): void {
     if (taskId === this.replyTaskId) return;
+    clearTimeout(this.replyTimer);
     this.replyTaskId = taskId;
     const files = this.get('.composer-reply-files');
     files.replaceChildren();
@@ -492,6 +500,15 @@ export class Composer {
     }
     this.renderState();
     void this.openPanel('notice');
+    if (!this.speechPending && this.voicePhase !== 'speaking') this.scheduleReplyDismiss();
+  }
+
+  private scheduleReplyDismiss(): void {
+    clearTimeout(this.replyTimer);
+    const taskId = this.replyTaskId;
+    this.replyTimer = setTimeout(() => {
+      if (this.replyTaskId === taskId && this.state === 'ready' && !this.question && this.desiredPanel === 'notice') void this.openPanel(null);
+    }, 3000);
   }
 
   private async openPanel(next: Panel, animate = true): Promise<void> {
@@ -609,7 +626,7 @@ async function initComposer(): Promise<void> {
     composer.update({
       state,
       message: snapshot.voice.phase === 'starting' ? 'Waiting for audio from your microphone.'
-        : snapshot.voice.phase === 'listening' ? 'Speak now. Kaji sends after 3 seconds of silence.'
+        : snapshot.voice.phase === 'listening' ? 'Speak now. Pause when you’re done to send.'
         : snapshot.voice.phase === 'transcribing' ? 'Turning your speech into a request.'
         : snapshot.voice.phase === 'error' ? snapshot.voice.reason
         : failureSettings === 'head' ? (snapshot.head.reason.includes('manual takeover')
@@ -619,6 +636,7 @@ async function initComposer(): Promise<void> {
       failureSettings,
       transcript: ['starting', 'listening', 'transcribing', 'error'].includes(snapshot.voice.phase) ? '' : snapshot.voice.transcript,
       voicePhase: snapshot.voice.phase,
+      speechPending: !!snapshot.voice.pendingSpeech,
       ...(questionChanged ? { question } : {}),
       audioLevel: snapshot.voice.audioLevel,
       attachments: snapshot.task?.artifacts ?? [],

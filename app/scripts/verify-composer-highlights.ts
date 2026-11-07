@@ -39,12 +39,16 @@ const fixture = Bun.spawn([fixtureExe, readyFile], { stdin: 'ignore', stdout: 'i
 let child: ReturnType<typeof Bun.spawn> | undefined;
 let browser: Browser | undefined;
 let focusStolen = false;
+let stage = 'startup', focusStage = '';
 const processId = new Uint32Array(1);
 const monitor = setInterval(() => {
   const hwnd = user32.symbols.GetForegroundWindow();
   if (hwnd) {
     user32.symbols.GetWindowThreadProcessId(hwnd, ptr(processId));
-    focusStolen ||= processId[0] === child?.pid || processId[0] === fixture.pid;
+    if (processId[0] === child?.pid || processId[0] === fixture.pid) {
+      focusStolen = true;
+      focusStage ||= `${stage} (${processId[0] === child?.pid ? 'Kaji composer' : 'test fixture'})`;
+    }
   }
 }, 8);
 try {
@@ -73,14 +77,17 @@ try {
     return !!composer && !!overlay;
   }, { timeout: 20_000 }).toBe(true);
   assert(composer && overlay);
+  stage = 'opening composer';
   const snapshot = () => composer.evaluate(() => (window as any).__TAURI_INTERNALS__.invoke('gui_get_runtime', {})) as Promise<RuntimeSnapshot>;
   await composer.evaluate(() => (window as any).__TAURI_INTERNALS__.invoke('gui_dispatch', { action: { type: 'mode', mode: 'guide' } }));
   await composer.getByRole('button', { name: 'Type a request', exact: true }).evaluate((element: HTMLButtonElement) => element.click());
+  stage = 'filling composer';
   await composer.getByRole('textbox', { name: 'Your request' }).fill('In the window titled Kaji Highlight Test, show me the Highlight check button. Inspect that window and point the independent cursor at that exact button. Keep it highlighted and ask me to click it. Do not invoke it or open or read another application.');
-  await composer.getByRole('textbox', { name: 'Your request' }).press('Enter');
+  stage = 'submitting composer';
+  await composer.locator('.composer-editor').evaluate((form: HTMLFormElement) => form.requestSubmit());
   let state: RuntimeSnapshot | undefined;
   await expect.poll(async () => {
-    assert(!focusStolen, 'Test application stole desktop focus');
+    assert(!focusStolen, `Test application stole desktop focus during ${focusStage}`);
     state = await snapshot();
     if (['error', 'blocked', 'stopped'].includes(state.task?.phase ?? '')) throw new Error(state.task?.message);
     return state.overlay.target;

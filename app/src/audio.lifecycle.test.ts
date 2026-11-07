@@ -186,7 +186,7 @@ test('Launch starts capture from native readiness without waiting for a loopback
   }
 });
 
-test('Auto-send waits for three continuous seconds of silence after speech', async () => {
+test('Auto-send preserves a short pause and submits after the final continuous pause', async () => {
   const h = harness(async () => []);
   const capture = h.host as unknown as {
     mode: string; capturing: boolean;
@@ -197,15 +197,15 @@ test('Auto-send waits for three continuous seconds of silence after speech', asy
   capture.capturing = true;
   let sends = 0;
   capture.finishUtterance = async () => { sends++; };
-  const second = new Float32Array(16_000);
-  await capture.recordUtterance(second, 0);
-  await capture.recordUtterance(second, 0.1);
-  await capture.recordUtterance(second, 0);
-  await capture.recordUtterance(second, 0);
-  await capture.recordUtterance(second, 0.1);
-  await capture.recordUtterance(second, 0);
-  await capture.recordUtterance(second, 0);
+  const chunk = new Float32Array(6_400);
+  await capture.recordUtterance(chunk, 0);
+  await capture.recordUtterance(chunk, 0.1);
+  await capture.recordUtterance(chunk, 0);
+  await capture.recordUtterance(chunk, 0);
+  await capture.recordUtterance(chunk, 0.1);
+  await capture.recordUtterance(chunk, 0);
+  await capture.recordUtterance(chunk, 0);
   expect(sends).toBe(0);
-  await capture.recordUtterance(second, 0);
+  for (let i = 0; i < 4 && sends === 0; i++) await capture.recordUtterance(chunk, 0);
   expect(sends).toBe(1);
 });

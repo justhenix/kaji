@@ -1,11 +1,11 @@
 {
-  "version": "0.1.2",
-  "pub_date": "2026-11-07T08:55:56.606Z",
-  "notes": "Automatic device setup and signed in-app updates.",
+  "version": "0.1.3",
+  "pub_date": "2026-11-07T12:50:44.494Z",
+  "notes": "Improved Hey Kaji recognition, adaptive speech pauses, and replies that stay through spoken feedback.",
   "platforms": {
     "windows-x86_64": {
-      "url": "https://ae5rkunkhbjgx5zz.public.blob.vercel-storage.com/windows/v0.1.2/Kaji-0.1.2-x64-setup.exe",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVkVaTW91MklhMTAyakdCWXNuamxnSVEvWnphWkJLTy9ObkpZdFRlUDBac0hZUHR2aGs3MjJ2Y0xZajVDVUdkdEYvUDk4TEQ4UTFwbWhrcU40UEdsUTNDUDZyWWs2TUFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDQxNjk2CWZpbGU6S2FqaV8wLjEuMl94NjQtc2V0dXAuZXhlCXZlcnNpb246MC4xLjIKZDBPWWx5ZGFIcXRCU1RTdmV5KytsQVU4T3hSaFdISCtyLzZ6UGZPeWUzUzRJcmV0bXhwWW5pN0xqeW9TWER6QkhCd0VJMVFUYTc4cnF3bHhyNjVrRGc9PQo="
+      "url": "https://ae5rkunkhbjgx5zz.public.blob.vercel-storage.com/windows/v0.1.3/Kaji-0.1.3-x64-setup.exe",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVkVaTW91MklhMTIvdUpRRDlVd2h4eU5yVWd0ODJFQkl5OWlFL0RDU0Mrc3dxcllZSm9KWk84cWVQTXl1S0ZndXNjbTlzRENUc2xFTGFHSW9jNnd4MXpvRzV5S2hNQ0E0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDU1NjgzCWZpbGU6S2FqaV8wLjEuM194NjQtc2V0dXAuZXhlCXZlcnNpb246MC4xLjMKUDFMMW9vNzdzY29DbHhxa1RFM0F4WURyem1kaUoxOG45Qm5SVmM3aU5sU0k4NXRVR29EcUVPZUNVcm4zenpkU2RvcFM4dnlTNkV3Q2NmdDhtQ3JhQUE9PQo="
     }
   }
 }

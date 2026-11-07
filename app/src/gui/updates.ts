@@ -9,7 +9,7 @@ export interface UpdateStatus {
   message: string;
 }
 export function updateCommand(action: 'status' | 'check' | 'install'): Promise<UpdateStatus> {
-  if (!('__TAURI_INTERNALS__' in window)) return Promise.resolve({ phase: 'idle', currentVersion: '0.1.2', version: null, downloaded: 0, total: null, message: '' });
+  if (!('__TAURI_INTERNALS__' in window)) return Promise.resolve({ phase: 'idle', currentVersion: '0.1.3', version: null, downloaded: 0, total: null, message: '' });
   return invoke<UpdateStatus>(`gui_update_${action}`);
 }
 
