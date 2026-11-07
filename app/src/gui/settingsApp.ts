@@ -1,7 +1,7 @@
 import { createDitherAccents } from './components/DitherAccent';
 import { prepareControls } from './components/Controls';
 import { createTitleBar } from './components/TitleBar';
-import { openMainWindow } from './ipc';
+import { openMainWindow, windowClose } from './ipc';
 import { renderAiModelsPage } from './pages/AiModelsPage';
 import { renderAppearancePage } from './pages/AppearancePage';
 import { renderGeneralPage } from './pages/GeneralPage';
@@ -53,6 +53,14 @@ function renderApp(): void {
       subtitle: 'Settings',
       showVersion: false,
       onBack: () => { store.discardDraft(); void openMainWindow(); },
+      onClose: async () => {
+        try {
+          await store.waitForPendingSave();
+          await windowClose('main');
+        } catch (error) {
+          console.error('Could not finish saving settings', error);
+        }
+      },
     })
   );
 
