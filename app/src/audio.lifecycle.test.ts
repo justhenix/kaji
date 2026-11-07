@@ -161,6 +161,31 @@ test('Stop discards the wake model tied to the cancelled microphone session', as
   expect(capture.spotter).toBeNull();
 });
 
+test('Launch starts capture from native readiness without waiting for a loopback event', async () => {
+  for (const allowed of [true, false]) {
+    const starts: string[] = [], actions: string[] = [];
+    const fresh = {revision: 1, voice: {sessionId: 0, enabled: false, phase: 'off'}};
+    const Host = runInNewContext(`${source}\nAudioHost;`, {
+      Audio: class {},
+      window: {addEventListener() {}},
+      navigator: {mediaDevices: {addEventListener() {}, enumerateDevices: async () => []}},
+      AUDIO_CONTROL_EVENT: 'audio', RUNTIME_UPDATE_EVENT: 'runtime',
+      listen: async () => () => {},
+      fetchRuntime: async () => fresh,
+      fetchSettings: async () => ({voice_activation: true, input_sensitivity: 50}),
+      dispatchRuntime: async (action: {type: string}) => {
+        actions.push(action.type);
+        return {revision: 2, voice: {sessionId: 1, enabled: allowed, phase: allowed ? 'starting' : 'off'}};
+      },
+    }) as new () => {mount(): Promise<void>; start(mode: string): Promise<void>};
+    const host = new Host();
+    host.start = async mode => { starts.push(mode); };
+    await host.mount();
+    expect(actions).toEqual(['audio.ready']);
+    expect(starts).toEqual(allowed ? ['wake'] : []);
+  }
+});
+
 test('Auto-send waits for three continuous seconds of silence after speech', async () => {
   const h = harness(async () => []);
   const capture = h.host as unknown as {

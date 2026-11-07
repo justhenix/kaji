@@ -4,10 +4,12 @@ import { AUDIO_CONTROL_EVENT, RUNTIME_UPDATE_EVENT, type AudioControl, type Runt
 import { dispatchRuntime, fetchRuntime, fetchSettings } from './gui/ipc';
 import { playSendCue } from './audio-cue';
 
-const KEYWORD = {
+export const WAKE_KEYWORD = {
   label: 'Hey Kaji',
+  threshold: 0.2,
   matches: [{ tokens: ['HH', 'EY1', 'K', 'AA1', 'JH', 'IY0'] }],
 };
+export const WAKE_ACTIVE_PATHS = 8;
 const MODEL_DATA = '/wake/preload.data';
 const MODEL_METADATA = '/wake/preload.js.metadata';
 const MAX_UTTERANCE_MS = 30_000;
@@ -41,9 +43,9 @@ export async function createWakeSpotter(signal?: AbortSignal): Promise<KeywordSp
   const tokensFile = metadata.files.find((file) => file.filename === '/tokens.txt');
   if (!tokensFile || tokensFile.end > data.byteLength) throw new Error('Wake model token map is invalid');
   const tokens = new Set(new TextDecoder().decode(data.slice(tokensFile.start, tokensFile.end)).split(/\r?\n/).map((line) => line.split(' ')[0]));
-  if (KEYWORD.matches[0].tokens.some((token) => !tokens.has(token))) throw new Error('Wake phrase does not match bundled model tokens');
+  if (WAKE_KEYWORD.matches[0].tokens.some((token) => !tokens.has(token))) throw new Error('Wake phrase does not match bundled model tokens');
   const worker = new Worker(new URL('/wake.worker.js', location.href), { type: 'module' });
-  const config: KeywordSpotterConfig = { model: { data, metadata }, keywords: [KEYWORD], maxActivePaths: 4, maxPendingAudio: 1, signal };
+  const config: KeywordSpotterConfig = { model: { data, metadata }, keywords: [WAKE_KEYWORD], maxActivePaths: WAKE_ACTIVE_PATHS, maxPendingAudio: 1, signal };
   return createKeywordSpotter(config, { worker });
 }
 
@@ -166,7 +168,15 @@ export class AudioHost {
       await this.setPhase('error', 'Audio session restarted. Start listening again.');
     } else if (snapshot?.voice.sessionId === 0) {
       const settings = await fetchSettings();
-      if (shouldStartWake(snapshot, settings.voice_activation)) await dispatchRuntime({ type: 'audio.ready' });
+      if (shouldStartWake(snapshot, settings.voice_activation)) {
+        const ready = await dispatchRuntime({ type: 'audio.ready' });
+        if (ready.voice.enabled && ready.voice.phase === 'starting') {
+          this.wakeEnabled = settings.voice_activation;
+          this.soundEffects = settings.sound_effects;
+          this.sensitivity = settings.input_sensitivity;
+          await this.start('wake', settings.microphone, settings.noise_suppression);
+        }
+      }
     }
   }
 

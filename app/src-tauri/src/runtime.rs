@@ -816,7 +816,7 @@ impl RuntimeManager {
                     .session_id
                     == 0;
                 if initial && self.gui.get_settings()?.voice_activation {
-                    self.set_voice(true, false)?;
+                    self.configure_voice(true, false, false)?;
                 }
             }
             RuntimeAction::Dwell { enabled } => self.set_dwell(enabled)?,
@@ -2840,6 +2840,10 @@ impl RuntimeManager {
     }
 
     fn set_voice(&self, enabled: bool, immediate: bool) -> Result<()> {
+        self.configure_voice(enabled, immediate, true)
+    }
+
+    fn configure_voice(&self, enabled: bool, immediate: bool, notify_audio: bool) -> Result<()> {
         if enabled {
             let settings = self.gui.get_settings()?;
             let mut inner = self.inner.lock().map_err(|_| "runtime state poisoned")?;
@@ -2847,19 +2851,21 @@ impl RuntimeManager {
                 && inner.snapshot.voice.enabled
                 && inner.snapshot.voice.phase == VoicePhase::Wake;
             let wait_for_wake = settings.voice_activation && !immediate;
-            self.emit_audio_control(if wake_armed {
-                json!({ "type": "push-to-talk", "active": true })
-            } else {
-                json!({
-                    "type": "start",
-                    "mode": if wait_for_wake { "wake" } else { "utterance" },
-                    "wakeEnabled": settings.voice_activation,
-                    "inputDeviceId": settings.microphone,
-                    "noiseSuppression": settings.noise_suppression,
-                    "sensitivity": settings.input_sensitivity,
-                    "soundEffects": settings.sound_effects,
-                })
-            })?;
+            if notify_audio {
+                self.emit_audio_control(if wake_armed {
+                    json!({ "type": "push-to-talk", "active": true })
+                } else {
+                    json!({
+                        "type": "start",
+                        "mode": if wait_for_wake { "wake" } else { "utterance" },
+                        "wakeEnabled": settings.voice_activation,
+                        "inputDeviceId": settings.microphone,
+                        "noiseSuppression": settings.noise_suppression,
+                        "sensitivity": settings.input_sensitivity,
+                        "soundEffects": settings.sound_effects,
+                    })
+                })?;
+            }
             self.gui.toggle_voice(true)?;
             let voice = &mut inner.snapshot.voice;
             voice.session_id = voice.session_id.wrapping_add(1);
