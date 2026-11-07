@@ -41,5 +41,8 @@ windows = { version = "=0.62.2", features = [
 ] }
 
 [profile.release]
-panic = "unwind"
-lto = "thin"
+opt-level = "s"
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"

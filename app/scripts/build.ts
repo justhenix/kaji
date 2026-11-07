@@ -1,4 +1,4 @@
-import { cp, mkdir } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from 'node:url';
@@ -10,6 +10,9 @@ const out = resolve(root, "dist");
 const webRequire = createRequire(resolve(root, "../web/package.json"));
 await import('../../web/scripts/prepare-assets');
 
+// This resolved build directory is disposable; stale assets must not reach the installer.
+await rm(out, { recursive: true, force: true });
+
 // 1. Directories
 await mkdir(resolve(out, "wasm"), { recursive: true });
 await mkdir(resolve(out, "fonts"), { recursive: true });
@@ -20,7 +23,13 @@ await mkdir(resolve(out, 'wake'), { recursive: true });
 await mkdir(resolve(out, 'prebuilt'), { recursive: true });
 
 // 2. MediaPipe WASM and model
-await cp(resolve(root, "node_modules/@mediapipe/tasks-vision/wasm"), resolve(out, "wasm"), { recursive: true });
+// forVisionTasks() uses the classic worker loader, with a non-SIMD fallback.
+for (const variant of ['vision_wasm_internal', 'vision_wasm_nosimd_internal']) {
+  for (const extension of ['js', 'wasm']) {
+    const name = `${variant}.${extension}`;
+    await cp(resolve(root, 'node_modules/@mediapipe/tasks-vision/wasm', name), resolve(out, 'wasm', name));
+  }
+}
 await cp(await ensureModel(), resolve(out, "face_landmarker.task"));
 for (const path of await ensureSpeechAssets()) {
   await cp(path, resolve(out, 'wake', path.endsWith('metadata') ? 'preload.js.metadata' : 'preload.data'));
@@ -59,7 +68,8 @@ const buildSensor = await Bun.build({
   entrypoints: [resolve(root, "src/sensor.ts")],
   outdir: out,
   target: "browser",
-  minify: false,
+  minify: true,
+  sourcemap: 'none',
 });
 if (!buildSensor.success) throw new AggregateError(buildSensor.logs, "Sensor build failed");
 
@@ -68,7 +78,8 @@ const buildWorker = await Bun.build({
   outdir: out,
   target: "browser",
   format: "iife",
-  minify: false,
+  minify: true,
+  sourcemap: 'none',
 });
 if (!buildWorker.success) throw new AggregateError(buildWorker.logs, "Vision worker build failed");
 
@@ -77,7 +88,8 @@ const buildMain = await Bun.build({
   outdir: out,
   naming: "main.[ext]",
   target: "browser",
-  minify: false,
+  minify: true,
+  sourcemap: 'none',
 });
 if (!buildMain.success) throw new AggregateError(buildMain.logs, "Main app build failed");
 
@@ -86,7 +98,8 @@ const buildSettings = await Bun.build({
   outdir: out,
   naming: "settings.[ext]",
   target: "browser",
-  minify: false,
+  minify: true,
+  sourcemap: 'none',
 });
 if (!buildSettings.success) throw new AggregateError(buildSettings.logs, "Settings app build failed");
 
@@ -95,7 +108,8 @@ const buildComposer = await Bun.build({
   outdir: out,
   naming: "composer.[ext]",
   target: "browser",
-  minify: false,
+  minify: true,
+  sourcemap: 'none',
 });
 if (!buildComposer.success) throw new AggregateError(buildComposer.logs, "Composer build failed");
 
@@ -106,7 +120,7 @@ for (const [entry, name] of [
   ['src/wake.worker.ts', 'wake.worker'],
   ['src/audio.capture.worklet.ts', 'audio.capture.worklet'],
 ] as const) {
-  const result = await Bun.build({ entrypoints: [resolve(root, entry)], outdir: out, naming: `${name}.[ext]`, target: 'browser', minify: false });
+  const result = await Bun.build({ entrypoints: [resolve(root, entry)], outdir: out, naming: `${name}.[ext]`, target: 'browser', minify: true, sourcemap: 'none' });
   if (!result.success) throw new AggregateError(result.logs, `${name} build failed`);
 }
 

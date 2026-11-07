@@ -1,4 +1,5 @@
-const installer = import.meta.env.PUBLIC_WINDOWS_INSTALLER_URL?.trim();
+const installer = import.meta.env.PUBLIC_WINDOWS_INSTALLER_URL?.trim()
+  || 'https://ae5rkunkhbjgx5zz.public.blob.vercel-storage.com/windows/v0.1.0/Kaji-0.1.0-x64-setup-wRv3HGJMHEizUNWpuTHqL7IKA5r9ql.exe';
 if (installer && !/^https:\/\/[^\s]+\.(?:exe|msi)(?:\?[^\s]*)?$/i.test(installer)) {
   throw new Error('PUBLIC_WINDOWS_INSTALLER_URL must be an HTTPS .exe or .msi URL.');
 }

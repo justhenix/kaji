@@ -10,6 +10,7 @@ const child = Bun.spawn([
   process.execPath,
   'build', resolve(root, 'agent/desktop-host.ts'),
   '--compile', '--target=bun-windows-x64',
+  '--minify', '--keep-names', '--sourcemap=none',
   '--env=disable',
   '--no-compile-autoload-dotenv', '--no-compile-autoload-bunfig',
   '--no-compile-autoload-package-json', '--no-compile-autoload-tsconfig',
