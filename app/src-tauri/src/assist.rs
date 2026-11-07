@@ -20,6 +20,8 @@ pub struct IntentCursor {
     pub revision: u64,
     pub element_id: String,
     pub point: Point,
+    pub target: Rect,
+    pub target_name: String,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -303,7 +305,11 @@ impl Assist {
         {
             return Err("target is unavailable or belongs to another window".into());
         }
-        let point = element.rect.ok_or("target has no bounds")?.center();
+        let target = element.rect.ok_or("target has no bounds")?;
+        if !target.valid() {
+            return Err("target has empty bounds".into());
+        }
+        let point = target.center();
         if !native::monitors()?.iter().any(|r| r.contains(point)) {
             return Err("target is outside available monitors".into());
         }
@@ -317,6 +323,8 @@ impl Assist {
             revision: s.revision,
             element_id: element_id.into(),
             point,
+            target,
+            target_name: element.name,
         };
         s.status.cursor = Some(cursor.clone());
         Ok(cursor)

@@ -36,6 +36,7 @@ pub struct Status {
     pub clicks: u64,
     pub dwell_progress: f64,
     pub dwell_ready: bool,
+    pub dwell_target: Option<Rect>,
     pub last_click: Option<Point>,
     pub cursor: Option<Point>,
     pub now_ms: f64,
@@ -89,6 +90,7 @@ impl State {
                 clicks: 0,
                 dwell_progress: 0.,
                 dwell_ready: false,
+                dwell_target: None,
                 last_click: None,
                 cursor: None,
                 now_ms: 0.,
@@ -352,6 +354,24 @@ impl State {
             .as_ref()
             .filter(|target| target.rect.contains(point))
     }
+
+    fn refresh_dwell_status(&mut self, now: f64) {
+        self.status.dwell_target = (self.status.phase == "tracking"
+            && now - self.captured <= 180.
+            && self.dwell_enabled
+            && self.dwell.armed())
+        .then(|| {
+            self.status
+                .cursor
+                .and_then(|point| self.clickable_target(now, point))
+        })
+        .flatten()
+        .map(|target| target.rect);
+        self.status.dwell_ready = self.status.dwell_target.is_some();
+        if !self.status.dwell_ready {
+            self.status.dwell_progress = 0.;
+        }
+    }
 }
 struct Shared {
     state: Mutex<State>,
@@ -572,16 +592,8 @@ impl Engine {
             .lock()
             .map_err(|_| "native executor state poisoned")?;
         s.status.now_ms = self.now_ms();
-        if s.status.phase != "tracking" {
-            s.status.dwell_progress = 0.;
-        }
-        s.status.dwell_ready = s.status.phase == "tracking"
-            && s.status.now_ms - s.captured <= 180.
-            && s.dwell_enabled
-            && s.status
-                .cursor
-                .is_some_and(|point| s.clickable_target(s.status.now_ms, point).is_some())
-            && s.dwell.armed();
+        let now = s.status.now_ms;
+        s.refresh_dwell_status(now);
         Ok(s.status.clone())
     }
 }
@@ -793,6 +805,65 @@ mod tests {
         assert!(s.clickable_target(200., Point { x: 24., y: 20. }).is_none());
         s.hit.as_mut().unwrap().target = None;
         assert!(s.clickable_target(200., point).is_none());
+    }
+
+    #[test]
+    fn dwell_highlight_exists_only_while_the_real_target_is_ready() {
+        let mut s = State::stopped();
+        let point = Point { x: 20., y: 20. };
+        let rect = Rect {
+            left: 10,
+            top: 10,
+            right: 50,
+            bottom: 50,
+        };
+        s.status.phase = "tracking".into();
+        s.status.cursor = Some(point);
+        s.captured = 100.;
+        s.dwell.update(100., point, &s.config);
+        s.hit = Some(HitObservation {
+            point,
+            at: 100.,
+            target: Some(crate::uia::DwellTarget {
+                hwnd: 123,
+                runtime_id: vec![1, 2],
+                rect,
+            }),
+        });
+        s.refresh_dwell_status(200.);
+        assert!(s.status.dwell_ready);
+        assert_eq!(s.status.dwell_target, Some(rect));
+        for event in ["off", "stale", "paused", "blank", "clicked"] {
+            s.hit = Some(HitObservation {
+                point,
+                at: 100.,
+                target: Some(crate::uia::DwellTarget {
+                    hwnd: 123,
+                    runtime_id: vec![1, 2],
+                    rect,
+                }),
+            });
+            s.dwell = Dwell::default();
+            s.dwell.update(100., point, &s.config);
+            s.dwell_enabled = event != "off";
+            s.status.phase = if event == "paused" {
+                "mouse"
+            } else {
+                "tracking"
+            }
+            .into();
+            if event == "blank" {
+                s.hit = None;
+            }
+            if event == "clicked" {
+                s.dwell = Dwell::require_departure(point, 200.);
+            }
+            s.status.dwell_progress = 0.4;
+            s.refresh_dwell_status(if event == "stale" { 500. } else { 200. });
+            assert!(!s.status.dwell_ready, "{event}");
+            assert_eq!(s.status.dwell_target, None, "{event}");
+            assert_eq!(s.status.dwell_progress, 0., "{event}");
+        }
     }
     #[test]
     fn camera_warmup_accepts_other_input_but_not_escape_or_cancellation() {

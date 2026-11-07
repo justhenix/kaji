@@ -1,6 +1,6 @@
 import { DiagnosticClient } from "../scripts/diagnostic-client";
 
-export type IntentCursor = { revision: number; element_id: string; point: { x: number; y: number } };
+export type IntentCursor = { revision: number; element_id: string; point: { x: number; y: number }; target: { left: number; top: number; right: number; bottom: number }; target_name: string };
 export type Mode = "guide" | "assist" | "agent";
 export type NativeAction = { kind: "invoke" } | { kind: "set_value"; value: string } | { kind: "set_toggle"; on: boolean } | { kind: "select" } | { kind: "scroll"; horizontal: number | null; vertical: number | null };
 export type Confirmation = { id: string; revision: number; element_id: string; target_name: string; action: NativeAction };

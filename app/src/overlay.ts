@@ -10,6 +10,8 @@ export interface OverlayGeometry {
   target: { left: number; top: number; width: number; height: number } | null;
 }
 
+export const OVERLAY_MARKUP = '<div class="doppelganger-overlay" aria-hidden="true" hidden><div class="doppelganger-target"><span class="target-corner top-left"></span><span class="target-corner top-right"></span><span class="target-corner bottom-left"></span><span class="target-corner bottom-right"></span></div><span class="doppelganger-label"></span><div class="doppelganger-dwell"></div><img class="doppelganger-cursor" src="/art/cursor.png" alt="" /><span class="doppelganger-identity" hidden>Kaji</span></div>';
+
 export function overlayGeometry(state: OverlayState): OverlayGeometry | null {
   const viewport = state.viewport;
   if (!viewport || !Number.isFinite(viewport.scaleFactor) || viewport.scaleFactor <= 0) return null;
@@ -22,8 +24,9 @@ export function overlayGeometry(state: OverlayState): OverlayGeometry | null {
     width: spriteWidth,
     height: spriteHeight,
   } : null;
-  const targetRect = state.target && state.target.right > state.target.left && state.target.bottom > state.target.top ? state.target : null;
-  const target = targetRect && state.highlightEnabled && state.mode === 'task' ? {
+  const targetRect = state.target && Object.values(state.target).every(Number.isFinite)
+    && state.target.right > state.target.left && state.target.bottom > state.target.top ? state.target : null;
+  const target = targetRect && state.highlightEnabled && state.mode !== 'hidden' ? {
     left: (targetRect.left - viewport.left) / scale,
     top: (targetRect.top - viewport.top) / scale,
     width: (targetRect.right - targetRect.left) / scale,
@@ -71,8 +74,13 @@ export function renderOverlay(root: HTMLElement, state: OverlayState): void {
   label.hidden = !geometry.target || !state.targetLabel;
   if (geometry.target) {
     label.textContent = state.targetLabel;
-    label.style.left = `${geometry.target.left}px`;
-    label.style.top = `${Math.max(0, geometry.target.top - 26)}px`;
+    label.style.maxWidth = `${Math.max(0, Math.min(280, geometry.width - 16))}px`;
+    const { width, height } = label.getBoundingClientRect();
+    const clamp = (value: number, maximum: number) => Math.max(8, Math.min(value, maximum - 8));
+    const above = geometry.target.top - height - 8;
+    const below = geometry.target.top + geometry.target.height + 8;
+    label.style.left = `${clamp(geometry.target.left, geometry.width - width)}px`;
+    label.style.top = `${above >= 8 ? above : clamp(below, geometry.height - height)}px`;
   }
   const ring = surface.querySelector<HTMLElement>('.doppelganger-dwell')!;
   ring.hidden = !state.point || state.dwellProgress <= 0;
@@ -88,7 +96,7 @@ export function renderOverlay(root: HTMLElement, state: OverlayState): void {
 async function initOverlay(): Promise<void> {
   const root = document.getElementById('app');
   if (!root) return;
-  root.innerHTML = '<div class="doppelganger-overlay" aria-hidden="true" hidden><div class="doppelganger-target"></div><span class="doppelganger-label"></span><div class="doppelganger-dwell"></div><img class="doppelganger-cursor" src="/art/cursor.png" alt="" /><span class="doppelganger-identity" hidden>Kaji</span></div>';
+  root.innerHTML = OVERLAY_MARKUP;
   let latest: OverlayState | undefined;
   let frame: number | undefined;
   const update = (state: OverlayState) => {
