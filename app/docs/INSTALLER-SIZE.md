@@ -10,6 +10,8 @@ Measured on 7 November 2026, Windows x64, Bun 1.4.2. Both artifacts use the same
 
 Optimized SHA-256: `b6b3eb497b00aca1ea37f8b2d30c3acd6dcf1a9ce507c644905ee992bef68f93`.
 
+The v0.1.2 release adds automatic device enrollment and the signed updater using Windows TLS: **70,716,901 bytes**, SHA-256 `923603b13c44b56acc752104cd72312376f52d16db371525491a5b81fab0100f`. This remains 4,979,567 bytes (6.58%) below the original setup. The updater's ZIP/archive and Rustls features are disabled because Windows uses the NSIS executable directly.
+
 ## Contents
 
 These are exact extracted payload sizes from `7z l -slt`. NSIS uses one solid compressed stream, so per-file compressed contributions cannot be added independently.

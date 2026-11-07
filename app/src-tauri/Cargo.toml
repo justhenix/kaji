@@ -1,6 +1,6 @@
 [package]
 name = "kaji-engine"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.90"
 default-run = "kaji"
@@ -39,6 +39,7 @@ windows = { version = "=0.62.2", features = [
   "Win32_Storage_Xps", "Win32_Security_Cryptography", "Win32_UI_Controls_Dialogs",
   "Win32_Networking_WinHttp", "Win32_UI_Shell"
 ] }
+tauri-plugin-updater = { version = "=2.14.1", default-features = false, features = ["native-tls", "system-proxy"] }
 
 [profile.release]
 opt-level = "s"

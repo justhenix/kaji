@@ -4,11 +4,11 @@ Cloudflare Worker: `https://kaji-gateway.relanta.workers.dev`. The desktop calls
 
 ## Boundaries
 
-- An explicit runtime bearer credential is required. The Worker stores its SHA-256 hash as `GATEWAY_TOKEN_SHA256`, separately from `BAI_API_KEY`. Neither credential is compiled into the application, web assets or installer resources. The optional Windows setup package uses the existing Windows-user DPAPI login; another account must provision its own login.
+- Every service request requires a runtime bearer credential. The owner's hash remains in `GATEWAY_TOKEN_SHA256`; public installs automatically register separate device hashes. Provider credentials remain in Worker secrets. Neither owner nor provider credentials are compiled into the application, web assets or installer resources. Windows DPAPI protects each installation's device login.
 - The endpoint, model allowlist, output limit and function-only tool protocol are enforced on the server. Requests are limited to 2 MiB; output is limited to 4,096 tokens and 2 MiB; the upstream deadline is 60 seconds. Redirects are rejected rather than followed with credentials. Provider error bodies and cookies are not forwarded.
 - A SQLite-backed Durable Object serializes reasoning requests globally: one in-flight request, with failed attempts counted toward the daily allowance. The default is 200 acquisitions per UTC day; `REASONING_DAILY_REQUEST_CAP` accepts an integer from 200 to 1,000. This demo deployment uses 500 and preserves existing usage when the allowance changes. A 65-second lease allows recovery if cleanup fails. A separate approximate Cloudflare limit allows 12 reasoning requests per minute per location. The daily limit is a request cap, not a monetary billing guarantee.
 - Browser-origin requests are rejected. CORS is not authentication; the bearer check remains mandatory. No arbitrary upstream URL, web search, shell tool, automatic retry, prompt logging or response storage is provided. Chat accepts bounded inline PNG, JPEG, or WebP data URLs only; provider vision remains disabled in capabilities until a live B.AI image-plus-tool check succeeds. The Durable Object stores counters and quota metadata only.
-- This is a single-owner developer gateway. Public account creation, per-device credentials and multi-user billing are not implemented. Do not distribute the owner's runtime credential with a public application. The gateway does not authorize Windows actions; Rust applies separate window, session, mode and confirmation checks.
+- Public desktop installs enroll a random device credential automatically. `DeviceRegistry` stores its SHA-256 hash, daily usage counters and revocation state. Enrollment allows 20 new devices per source IP per UTC day, 100 new devices globally per day, and six registration attempts per minute per IP. Each device gets 100 chat, 200 transcription, 100 spoken-feedback and 100 title requests per day, plus a 12-request/minute limiter. Existing aggregate provider budgets still apply. No owner or provider credential ships in the installer. This is anonymous device access, not a user-account or billing system. Rust separately authorizes Windows actions.
 
 ## Build and deploy
 
@@ -38,7 +38,9 @@ On this development machine, the owner credential is stored outside the reposito
 
 `--mode agent` explicitly authorizes bounded automatic execution in that window. The default is Assist, which stages a native confirmation and exits without executing it. An embedding or the workflow host can handle confirmation; the model has no confirmation tool.
 
-On another Windows account, provision a runtime credential interactively and encrypt it without printing it:
+Normal Windows installations require no credential provisioning. The native client generates a random 256-bit device secret, encrypts it with Windows DPAPI, enrolls it over the pinned HTTPS gateway connection, and reuses it across restarts and upgrades. An interrupted enrollment is idempotent. An outdated owner credential can migrate to a device credential after a rejected session check. Revoked credentials fail closed.
+
+The following manual procedure is only for an operator who explicitly needs the owner credential in a development harness:
 
 ```powershell
 $credentialDirectory = Join-Path $env:LOCALAPPDATA 'Kaji'

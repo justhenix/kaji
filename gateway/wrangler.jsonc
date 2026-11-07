@@ -8,9 +8,10 @@
   "workers_dev": true,
   "vars": { "BAI_VISION_VERIFIED": "deepseek-v4.1-flash", "REASONING_DAILY_REQUEST_CAP": "500" },
   "observability": { "enabled": false },
-  "durable_objects": { "bindings": [{ "name": "OWNER_BUDGET", "class_name": "OwnerBudget" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OwnerBudget"] }],
+  "durable_objects": { "bindings": [{ "name": "OWNER_BUDGET", "class_name": "OwnerBudget" }, { "name": "DEVICES", "class_name": "DeviceRegistry" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OwnerBudget"] }, { "tag": "v2-devices", "new_sqlite_classes": ["DeviceRegistry"] }],
   "ratelimits": [
-    { "name": "REQUEST_LIMIT", "namespace_id": "58132411", "simple": { "limit": 12, "period": 60 } }
+    { "name": "REQUEST_LIMIT", "namespace_id": "58132411", "simple": { "limit": 12, "period": 60 } },
+    { "name": "ENROLL_LIMIT", "namespace_id": "58132412", "simple": { "limit": 6, "period": 60 } }
   ]
 }

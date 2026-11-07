@@ -20,7 +20,7 @@ function renderServices(container: HTMLElement, snapshot: RuntimeSnapshot | null
     return;
   }
   if (!snapshot?.services) {
-    view.innerHTML = '<p class="service-state" role="status">Service availability is unavailable.</p>';
+    view.innerHTML = '<p class="service-state" role="status">Connecting to AI services…</p>';
     return;
   }
   const reason = snapshot.services.reasoning.reason;
@@ -29,7 +29,7 @@ function renderServices(container: HTMLElement, snapshot: RuntimeSnapshot | null
     message.className = 'service-state';
     message.setAttribute('role', 'status');
     message.textContent = reason.includes('gateway credential')
-      ? 'AI services aren’t connected for this Windows account.'
+      ? 'Kaji couldn’t finish automatic setup. Check the connection to try again.'
       : reason.includes('HTTP 401')
         ? 'Kaji couldn’t sign in to its AI services. Check the connection again.'
         : reason;

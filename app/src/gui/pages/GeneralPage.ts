@@ -2,6 +2,7 @@ import { store } from '../store';
 import {dispatchRuntime,onRuntimeUpdate} from '../ipc';
 import {showAboutModal} from '../components/Modal';
 import type {RuntimeSnapshot} from '../../../shared/runtime';
+import { mountUpdates } from '../updates';
 
 export function renderGeneralPage(): HTMLElement {
   const container = document.createElement('div');
@@ -32,9 +33,15 @@ export function renderGeneralPage(): HTMLElement {
     </div>
     <p class="settings-row-desc" data-input-error role="alert" hidden></p>
     <div class="kaji-card"><div class="settings-row">
-      <div><div class="settings-row-label">Kaji Desktop</div><div class="settings-row-desc">Version 0.1.0 · Windows</div></div>
+      <div><div class="settings-row-label">Kaji Desktop</div><div class="settings-row-desc" data-app-version></div></div>
       <button class="btn-secondary" type="button" data-about>About Kaji</button>
-    </div></div>`;
+    </div>
+      <div class="settings-row">
+        <div class="settings-row-info"><p class="settings-row-desc" data-update-status role="status" aria-live="polite">Checking update status…</p></div>
+        <button class="btn-secondary" type="button" data-update-action>Check for updates</button>
+      </div>
+    </div>`;
+  const stopUpdates = mountUpdates(container);
   container.querySelector<HTMLSelectElement>('#gen-startup-select')!.onchange = event => {
     store.setDraftField('startup_open', (event.currentTarget as HTMLSelectElement).value as 'composer' | 'mainWindow');
   };
@@ -64,7 +71,7 @@ export function renderGeneralPage(): HTMLElement {
     container.querySelector('[data-head-status]')!.textContent='Unavailable';
     container.querySelector('[data-voice-status]')!.textContent='Unavailable';
   });
-  const observer=new MutationObserver(()=>{if(!container.isConnected){active=false;unlisten();observer.disconnect();}});
+  const observer=new MutationObserver(()=>{if(!container.isConnected){active=false;unlisten();stopUpdates();observer.disconnect();}});
   observer.observe(document.getElementById('app')!,{childList:true,subtree:true});
   return container;
 }

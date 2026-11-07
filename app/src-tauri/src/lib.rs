@@ -16,6 +16,7 @@ pub mod review;
 pub mod runtime;
 pub mod sensor;
 pub mod uia;
+pub mod updates;
 
 pub type Result<T> = std::result::Result<T, String>;
 

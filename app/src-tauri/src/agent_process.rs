@@ -1,4 +1,4 @@
-use crate::{Result, native};
+use crate::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::os::windows::process::CommandExt;
@@ -111,7 +111,7 @@ impl AgentProcess {
         on_output: impl Fn(DesktopHostOutput) + Send + Sync + 'static,
     ) -> Result<Arc<Self>> {
         let binary = resolve_agent_binary()?;
-        let mut token = native::load_gateway_token()?;
+        let mut token = crate::gateway_client::connected_token()?;
         let mut command = Command::new(binary);
         command
             .env_clear()
