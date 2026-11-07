@@ -41,9 +41,9 @@ test('fresh device enrolls idempotently and reconnects; another credential is st
 });
 test('atomic per-IP admission and per-device quotas preserve aggregate provider budgets', async () => {
   const { call, env } = setup();
-  const tokens = Array.from({ length: 6 }, (_, i) => 'kd_' + i.toString(16).repeat(64));
+  const tokens = Array.from({ length: 21 }, (_, i) => 'kd_' + i.toString(16).padStart(2, '0').repeat(32));
   const enrolled = await Promise.all(tokens.map(token => call('devices/enroll', token)));
-  expect(enrolled.filter(result => result.status === 200)).toHaveLength(5);
+  expect(enrolled.filter(result => result.status === 200)).toHaveLength(20);
   expect(enrolled.filter(result => result.status === 429)).toHaveLength(1);
   let upstreamCalls = 0, globalReservations = 0;
   env.OWNER_BUDGET.get = () => ({ fetch: async url => { if (url.endsWith('/acquire')) globalReservations++; return Response.json(url.endsWith('/acquire') ? { status: 'allowed', lease: 'fixture' } : { status: 'released' }); } });

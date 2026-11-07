@@ -26,7 +26,8 @@ export class DeviceRegistry {
         if (!/^[a-f0-9]{64}$/.test(body.ip ?? '')) return json(400);
         const admission = await storage.get<{ day: number; count: number; ips: Record<string, number> }>('admission');
         const current = admission?.day === day ? admission : { day, count: 0, ips: {} };
-        if (current.count >= 100 || (current.ips[body.ip!] ?? 0) >= 5) return json(429);
+        // A campus or shared Wi-Fi can put many legitimate installations behind one IP.
+        if (current.count >= 100 || (current.ips[body.ip!] ?? 0) >= 20) return json(429);
         current.count++; current.ips[body.ip!] = (current.ips[body.ip!] ?? 0) + 1;
         await storage.put('admission', current);
         await storage.put(key, { revoked: false, day, counts: {} });
