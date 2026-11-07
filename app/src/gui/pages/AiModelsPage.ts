@@ -24,8 +24,16 @@ function renderServices(container: HTMLElement, snapshot: RuntimeSnapshot | null
     return;
   }
   const reason = snapshot.services.reasoning.reason;
-  if (reason?.includes('gateway credential') && Object.values(snapshot.services).every(service => !service.available && service.reason === reason)) {
-    view.innerHTML = '<p class="service-state" role="status">AI services aren’t connected for this Windows account.</p>';
+  if (reason && Object.values(snapshot.services).every(service => !service.available && service.reason === reason)) {
+    const message = document.createElement('p');
+    message.className = 'service-state';
+    message.setAttribute('role', 'status');
+    message.textContent = reason.includes('gateway credential')
+      ? 'AI services aren’t connected for this Windows account.'
+      : reason.includes('HTTP 401')
+        ? 'Kaji couldn’t sign in to its AI services. Check the connection again.'
+        : reason;
+    view.replaceChildren(message);
     return;
   }
   const list = document.createElement('dl');
@@ -67,6 +75,7 @@ export function renderAiModelsPage(): HTMLElement {
     <div class="kaji-card service-card">
       <div class="kaji-card-title">Services</div>
       <div id="ai-service-state" aria-live="polite"><p class="service-state" role="status">Checking service availability…</p></div>
+      <button class="btn-secondary" id="ai-service-retry" type="button">Check connection</button>
     </div>
     <div class="kaji-card">
       <div class="settings-row">
@@ -86,10 +95,26 @@ export function renderAiModelsPage(): HTMLElement {
     store.setDraftField('model', (event.currentTarget as HTMLSelectElement).value);
   };
   let active = true;
+  const retry = container.querySelector<HTMLButtonElement>('#ai-service-retry')!;
+  retry.onclick = async () => {
+    retry.disabled = true;
+    retry.textContent = 'Checking…';
+    try {
+      await dispatchRuntime({ type: 'services.refresh' });
+    } catch {
+      if (active) renderServices(container, null, true);
+      retry.disabled = false;
+      retry.textContent = 'Check connection';
+    }
+  };
   let revision = -1;
   const update = (snapshot: RuntimeSnapshot) => {
     if (!active || snapshot.revision <= revision) return;
     revision = snapshot.revision;
+    if (snapshot.message === 'Service status updated') {
+      retry.disabled = false;
+      retry.textContent = 'Check connection';
+    }
     const advertised = snapshot.services?.reasoning.models;
     if (advertised) for (const option of container.querySelector<HTMLSelectElement>('#ai-model-select')!.options) {
       option.disabled = advertised.find(model => model.id === gatewayModelId(option.value))?.available === false;

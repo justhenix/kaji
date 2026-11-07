@@ -18,6 +18,7 @@ class SettingsStore {
   private isLoaded = false;
   private isDirty = false;
   private changedFields = new Set<keyof AppSettings>();
+  private pendingSave: Promise<void> | null = null;
   private listeners: Set<Listener> = new Set();
 
   async init(): Promise<void> {
@@ -79,14 +80,24 @@ class SettingsStore {
     }
   }
 
-  async saveDraft(): Promise<void> {
+  saveDraft(): Promise<void> {
     const snapshot = { ...this.draft };
-    await persistSettings(snapshot);
-    broadcastSettings(snapshot);
-    this.committed = snapshot;
-    this.changedFields = new Set((Object.keys(snapshot) as (keyof AppSettings)[]).filter((key) => this.draft[key] !== snapshot[key]));
-    this.isDirty = this.changedFields.size > 0;
-    this.notify('saved');
+    const saving = (async () => {
+      await persistSettings(snapshot);
+      broadcastSettings(snapshot);
+      this.committed = snapshot;
+      this.changedFields = new Set((Object.keys(snapshot) as (keyof AppSettings)[]).filter((key) => this.draft[key] !== snapshot[key]));
+      this.isDirty = this.changedFields.size > 0;
+      this.notify('saved');
+    })();
+    this.pendingSave = saving;
+    return saving.finally(() => {
+      if (this.pendingSave === saving) this.pendingSave = null;
+    });
+  }
+
+  async waitForPendingSave(): Promise<void> {
+    await this.pendingSave;
   }
 
   discardDraft(): void {

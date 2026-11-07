@@ -6,6 +6,7 @@ export interface TitleBarOptions {
   subtitle?: string;
   showVersion?: boolean;
   onBack?: () => void;
+  onClose?: () => void | Promise<void>;
 }
 
 export function createTitleBar(options: TitleBarOptions): HTMLElement {
@@ -38,7 +39,7 @@ export function createTitleBar(options: TitleBarOptions): HTMLElement {
   if (options.showVersion) {
     const versionSpan = document.createElement('span');
     versionSpan.className = 'titlebar-version';
-    versionSpan.textContent = 'v0.1.0';
+    versionSpan.textContent = 'v0.1.1';
     brand.appendChild(versionSpan);
   }
 
@@ -81,7 +82,7 @@ export function createTitleBar(options: TitleBarOptions): HTMLElement {
   closeBtn.setAttribute('title', 'Close');
   closeBtn.setAttribute('aria-label', 'Close');
   closeBtn.innerHTML = `<i class="ri-close-line"></i>`;
-  closeBtn.onclick = () => windowClose(options.windowLabel);
+  closeBtn.onclick = () => options.onClose ? options.onClose() : windowClose(options.windowLabel);
   controls.appendChild(closeBtn);
 
   header.appendChild(brand);
