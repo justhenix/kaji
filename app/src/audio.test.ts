@@ -1,6 +1,41 @@
 import { expect, test } from 'bun:test';
 import type { RuntimeSnapshot } from '../shared/runtime';
-import { downsample, encodeWav, shouldRestoreWake, shouldStartWake, utteranceRoute } from './audio';
+import { AudioHost, downsample, encodeWav, shouldRestoreWake, shouldStartWake, utteranceRoute } from './audio';
+
+function utteranceCapture() {
+  const host = Object.assign(Object.create(AudioHost.prototype), {
+    mode: 'utterance', sensitivity: 50, noiseFloor: 0, speechLevel: 0, speechMs: 0, pauseEstimateMs: 0,
+    heardSpeech: false, recording: [], recordingMs: 0, captureElapsedMs: 0, quietMs: 0,
+  });
+  let finished = false;
+  host.finishUtterance = async () => { finished = true; };
+  return {
+    get finished() { return finished; },
+    async feed(milliseconds: number, level: number) {
+      for (let elapsed = 0; elapsed < milliseconds && !finished; elapsed += 32) {
+        await host.recordUtterance(new Float32Array(512).fill(level), level);
+      }
+    },
+  };
+}
+
+test('Bluetooth microphone background hiss ends a spoken request without waiting for the 30-second cap', async () => {
+  const capture = utteranceCapture();
+  await capture.feed(1600, 0.03);
+  await capture.feed(2400, 0.00065);
+  expect(capture.finished).toBe(true);
+});
+
+test('natural pauses do not submit a command before the speaker finishes', async () => {
+  const capture = utteranceCapture();
+  await capture.feed(1000, 0.03);
+  await capture.feed(800, 0.00065);
+  expect(capture.finished).toBe(false);
+  await capture.feed(1000, 0.02);
+  expect(capture.finished).toBe(false);
+  await capture.feed(2400, 0.00065);
+  expect(capture.finished).toBe(true);
+});
 
 test('captured PCM becomes mono 16 kHz WAV within expected byte bounds', () => {
   const bytes = encodeWav([new Float32Array([-1, 0, 1])]);

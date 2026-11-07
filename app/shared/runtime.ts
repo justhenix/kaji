@@ -78,6 +78,7 @@ export interface VoiceState {
   reason: string;
   audioLevel: number;
   transcript: string;
+  pendingSpeech?: string | null;
 }
 
 export type AudioControl =

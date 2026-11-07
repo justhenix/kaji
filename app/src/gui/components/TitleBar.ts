@@ -39,7 +39,7 @@ export function createTitleBar(options: TitleBarOptions): HTMLElement {
   if (options.showVersion) {
     const versionSpan = document.createElement('span');
     versionSpan.className = 'titlebar-version';
-    versionSpan.textContent = 'v0.1.2';
+    versionSpan.textContent = 'v0.1.3';
     brand.appendChild(versionSpan);
   }
 

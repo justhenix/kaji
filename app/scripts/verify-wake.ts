@@ -14,10 +14,11 @@ const audioFlag = process.argv.indexOf('--audio');
 assert(audioFlag >= 0, 'Supply --audio with a WAV containing Hey Kaji, a harmless command, and trailing silence');
 const audioFile = resolve(process.argv[audioFlag + 1]!);
 assert(await Bun.file(audioFile).exists());
+const spokenFeedback = process.argv.includes('--spoken-feedback');
 const profile = await mkdtemp(join(tmpdir(), 'kaji-wake-check-'));
 await mkdir(join(profile, 'roaming/Kaji'), { recursive: true });
 await Bun.write(join(profile, 'roaming/Kaji/settings.json'), JSON.stringify({
-  ...DEFAULT_SETTINGS, voice_activation: true, voice_feedback: false, sound_effects: false,
+  ...DEFAULT_SETTINGS, voice_activation: true, voice_feedback: spokenFeedback, sound_effects: false,
   permission_input: false, enable_head_control: false, startup_open: 'composer',
 }));
 const probe = createServer();
@@ -26,13 +27,14 @@ const address = probe.address();
 assert(address && typeof address === 'object');
 const port = address.port;
 await new Promise<void>((accept, reject) => probe.close(error => error ? reject(error) : accept()));
-const child = Bun.spawn([binary], {
+const isolatedDesktop = process.argv.includes('--isolated-desktop');
+const child = Bun.spawn(isolatedDesktop ? [resolve(binary, '../python/python.exe'), '-I', resolve(import.meta.dir, 'fixtures/isolated-desktop.py'), binary] : [binary], {
   env: {
     ...process.env, APPDATA: join(profile, 'roaming'), LOCALAPPDATA: join(profile, 'local'),
     WEBVIEW2_USER_DATA_FOLDER: join(profile, 'webview'),
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1 --use-fake-device-for-media-stream --use-fake-ui-for-media-stream --use-file-for-fake-audio-capture=${audioFile}`,
   },
-  stdin: 'ignore', stdout: 'ignore', stderr: 'pipe', windowsHide: true,
+  stdin: isolatedDesktop ? 'pipe' : 'ignore', stdout: 'ignore', stderr: 'pipe', windowsHide: true,
 });
 const nativeLog = new Response(child.stderr).text();
 let browser: Browser | undefined;
@@ -64,6 +66,17 @@ try {
     if (lastVoice.phase === 'error') throw new Error(lastVoice.reason);
     return lastVoice.phase;
   }, {timeout: 15_000}).toBe('wake');
+  const finishSpokenReply = async () => {
+    if (!spokenFeedback) return;
+    await expect.poll(async () => {
+      await expect(main!.locator('.composer-notice')).toBeVisible();
+      return (await invoke<RuntimeSnapshot>(main!, 'gui_get_runtime')).voice.phase;
+    }, {timeout: 25_000, intervals: [100]}).toBe('speaking');
+    await waitWake();
+    await Bun.sleep(2500);
+    await expect(main!.locator('.composer-notice')).toBeVisible();
+    await expect(main!.locator('.composer-notice')).toBeHidden({timeout: 1500});
+  };
   await waitWake();
   const settings = await invoke<Record<string, unknown>>(main, 'gui_get_settings');
   await invoke(main, 'gui_save_settings', {settings: {...settings, voice_activation: false}});
@@ -84,7 +97,19 @@ try {
   }, {timeout: 70_000, intervals: [100, 250, 500]}).toBe('complete');
   assert(phases.has('wake') && phases.has('listening') && phases.has('transcribing'), `Missing voice transitions: ${[...phases]}`);
   assert(/kaji voice works/i.test(final!.task!.message), `Unexpected reply: ${final!.task!.message}`);
+  await finishSpokenReply();
   await expect.poll(async () => (await invoke<RuntimeSnapshot>(main, 'gui_get_runtime')).voice.phase).toBe('wake');
+  const firstTaskId = final!.task!.id;
+  await expect.poll(async () => {
+    const state = await invoke<RuntimeSnapshot>(main, 'gui_get_runtime');
+    if (state.voice.phase === 'error' || state.task?.phase === 'error') throw new Error(state.voice.reason || state.task?.message);
+    if (state.task?.id === firstTaskId || state.task?.phase !== 'complete') return false;
+    final = state;
+    return /kaji voice works/i.test(state.task.message);
+  }, {timeout: 70_000, intervals: [100, 250, 500]}).toBe(true);
+  await finishSpokenReply();
+  await expect.poll(async () => (await invoke<RuntimeSnapshot>(main, 'gui_get_runtime')).voice.phase).toBe('wake');
+  console.log('PASS: a second hands-free wake completes without restarting capture, including spoken feedback when enabled');
   await invoke(main, 'gui_dispatch', {action: {type: 'listen', enabled: false}});
   const audio = browser.contexts().flatMap((context: {pages(): Page[]}) => context.pages()).find((page: Page) => page.url().endsWith('/audio.html'))!;
   await audio.reload();
