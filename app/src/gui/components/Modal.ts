@@ -82,7 +82,7 @@ export function showAboutModal(): void {
       <img src="/logo/kaji-mark.svg" alt="Kaji" width="40" height="40" />
       <div>
         <div style="font-family: var(--font-heading); font-weight: 700; font-size: 18px; color: var(--kaji-blue);">Kaji Desktop</div>
-        <div style="font-size: 13px; color: var(--text-secondary);">Version 0.1.4 (Windows Native)</div>
+        <div style="font-size: 13px; color: var(--text-secondary);">Version 0.1.5 (Windows Native)</div>
       </div>
     </div>
     <p style="font-size: 13.5px; line-height: 1.5; color: var(--text-primary);">

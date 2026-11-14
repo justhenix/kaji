@@ -24,8 +24,8 @@ function setServiceStatus(node: HTMLElement, name: string, capability?: ServiceC
 }
 
 function populateDevices(select: HTMLSelectElement, devices: MediaDeviceInfo[], kind: MediaDeviceKind, selected: string): void {
-  const matches = devices.filter((device) => device.kind === kind);
-  select.replaceChildren(new Option(kind === 'audioinput' ? 'Automatic' : 'System default', ''));
+  const matches = devices.filter((device) => device.kind === kind && device.deviceId !== 'default');
+  select.replaceChildren(new Option(kind === 'audioinput' ? 'Windows default' : 'System default', ''));
   matches.forEach((device, index) => {
     const label = device.label || `${kind === 'audioinput' ? 'Microphone' : 'Speaker'} ${index + 1}`;
     select.add(new Option(label, device.deviceId, false, device.deviceId === selected));
@@ -48,7 +48,7 @@ export function renderVoiceAudioPage(): HTMLElement {
       <div class="voice-device-row">
         <label for="va-mic-select">Input device</label>
         <div class="voice-controls">
-          <select class="kaji-select" id="va-mic-select" aria-label="Input device"><option value="">Automatic</option></select>
+          <select class="kaji-select" id="va-mic-select" aria-label="Input device"><option value="">Windows default</option></select>
           <div class="mic-meter-row" id="vu-meter" role="img" aria-label="Microphone level">
             ${Array.from({ length: 10 }, () => '<div class="meter-bar"></div>').join('')}
           </div>

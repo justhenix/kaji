@@ -5,6 +5,7 @@ import type { AppSettings, EngineGuiStatus } from './types';
 import type { ConversationRecord, ConversationSummary, RuntimeAction, RuntimeSnapshot } from '../../shared/runtime';
 import { RUNTIME_UPDATE_EVENT } from '../../shared/runtime';
 import { GATEWAY_MODELS } from '../../shared/models';
+import { statusFromRuntime } from './status';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   // General
@@ -15,7 +16,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   startup_open: 'composer',
 
   // Voice & Audio
-  microphone: 'Microphone (Realtek Audio)',
+  microphone: '',
   noise_suppression: true,
   voice_activation: true,
   wake_phrase: 'Hey Kaji',
@@ -152,16 +153,7 @@ export async function fetchEngineStatus(): Promise<EngineGuiStatus> {
   if (!isTauri) {
     return { ...browserStatus };
   }
-  const runtime = await fetchRuntime();
-  return {
-    phase: runtime.task?.phase ?? (runtime.head.active ? 'doing' : 'ready'),
-    reason: runtime.message || runtime.head.reason || runtime.voice.reason,
-    mode: runtime.mode,
-    head_control_active: runtime.head.enabled,
-    voice_active: runtime.voice.enabled,
-    is_paused: runtime.task?.phase === 'paused' || runtime.head.phase === 'paused',
-    session_id: runtime.head.sessionId,
-  };
+  return statusFromRuntime(await fetchRuntime());
 }
 
 export async function setMode(mode: 'guide' | 'assist' | 'agent'): Promise<void> {

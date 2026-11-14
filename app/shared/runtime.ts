@@ -85,7 +85,7 @@ export type AudioControl =
   | { type: 'start'; mode: 'wake' | 'utterance'; wakeEnabled: boolean; inputDeviceId?: string; noiseSuppression: boolean; sensitivity: number; soundEffects?: boolean }
   | { type: 'stop' }
   | { type: 'push-to-talk'; active: boolean }
-  | { type: 'play'; utteranceId: string; voiceSessionId: number; conversationId: string; audioBase64: string; mimeType: 'audio/mpeg' | 'audio/wav'; outputDeviceId?: string; volume: number };
+  | { type: 'play'; utteranceId: string; voiceSessionId: number; conversationId: string | null; audioBase64: string; mimeType: 'audio/mpeg' | 'audio/wav'; outputDeviceId?: string; volume: number };
 
 export type SensorControl =
   | { type: 'start'; cameraDeviceId?: string }
@@ -129,6 +129,7 @@ export interface RuntimeSnapshot {
   question: PendingQuestion | null;
   message: string;
   head: HeadState;
+  attachments?: ArtifactReference[];
   voice: VoiceState;
   overlay: OverlayState;
   layout: { active: boolean };
@@ -145,7 +146,7 @@ export type RuntimeAction =
   | { type: 'mode'; mode: Mode }
   | { type: 'head' | 'dwell'; enabled: boolean }
   | { type: 'listen'; enabled: boolean; immediate?: boolean }
-  | { type: 'calibrate' | 'file.select' | 'document.select' | 'layout.restore' | 'services.refresh' }
+  | { type: 'calibrate' | 'file.select' | 'file.remove' | 'document.select' | 'layout.restore' | 'services.refresh' }
   | { type: 'conversation.new' }
   | { type: 'conversation.open'; conversationId: string }
   | { type: 'conversation.rename'; conversationId: string; title: string }

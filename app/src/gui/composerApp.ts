@@ -42,7 +42,7 @@ export interface ComposerUpdate {
 export type ComposerAction =
   | { type: 'request'; text: string }
   | { type: 'listen' | 'dwell'; enabled: boolean }
-  | { type: 'file.select' }
+  | { type: 'file.select' | 'file.remove' }
   | { type: 'artifact.open'; artifactId: string }
   | { type: 'answer'; taskId: string; questionId: string; answer: string }
   | { type: 'confirm'; taskId: string; questionId: string; approved: boolean }
@@ -79,6 +79,7 @@ export class Composer {
   private generation = 0;
   private motion: Animation | null = null;
   private frameKey = '';
+  private attachmentId: string | undefined;
   private frameUpdates = Promise.resolve();
   private leaving = false;
   private replyTaskId: string | null = null;
@@ -93,9 +94,9 @@ export class Composer {
     this.stage.innerHTML = `
       <section class="composer-panel" hidden>
         <form class="composer-editor" hidden aria-label="Type a request">
+          <div class="composer-attachments" aria-live="polite" hidden></div>
           <label class="sr-only" for="composer-input">Your request</label>
           <textarea id="composer-input" placeholder="Type a request…" rows="2" spellcheck="true"></textarea>
-          <div class="composer-attachments" aria-live="polite" hidden></div>
           <div class="composer-editor-footer">
             <span class="composer-key-hint">Enter to send</span>
             <button class="composer-secondary composer-attach" type="button" data-attach><i class="ri-attachment-2" aria-hidden="true"></i> Attach file</button>
@@ -334,13 +335,20 @@ export class Composer {
   }
 
   private renderAttachments(attachments: ArtifactReference[]): void {
+    const attachmentId = attachments[0]?.id;
+    if (attachmentId === this.attachmentId) return;
+    this.attachmentId = attachmentId;
     const list = this.get('.composer-attachments');
     list.replaceChildren();
     for (const artifact of attachments) {
-      const item = document.createElement('span'); item.className = 'composer-attachment';
-      const icon = document.createElement('i'); icon.className = 'ri-attachment-2'; icon.setAttribute('aria-hidden', 'true');
-      const name = document.createElement('span'); name.textContent = artifact.name;
-      item.append(icon, name); list.append(item);
+      const item = document.createElement('div'); item.className = 'composer-attachment';
+      const icon = document.createElement('i'); icon.className = 'ri-file-2-line'; icon.setAttribute('aria-hidden', 'true');
+      const name = document.createElement('span'); name.textContent = artifact.name; name.title = artifact.name;
+      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'composer-attachment-remove';
+      remove.setAttribute('aria-label', `Remove ${artifact.name}`);
+      const close = document.createElement('i'); close.className = 'ri-close-line'; close.setAttribute('aria-hidden', 'true');
+      remove.append(close); remove.onclick = () => this.emit({ type: 'file.remove' });
+      item.append(icon, name, remove); list.append(item);
     }
     list.hidden = attachments.length === 0;
     void this.resize();
@@ -636,7 +644,7 @@ async function initComposer(): Promise<void> {
       speechPending: !!snapshot.voice.pendingSpeech,
       ...(questionChanged ? { question } : {}),
       audioLevel: snapshot.voice.audioLevel,
-      attachments: snapshot.task?.artifacts ?? [],
+      attachments: snapshot.attachments ?? [],
       dwellEnabled: snapshot.head.enabled && snapshot.head.dwellEnabled,
       dwellReady: snapshot.head.dwellReady,
       headSessionId: snapshot.head.sessionId,
@@ -657,6 +665,7 @@ async function initComposer(): Promise<void> {
       case 'listen': command = { type: 'listen', enabled: action.enabled, immediate: true }; break;
       case 'dwell': command = { type: 'dwell', enabled: action.enabled }; break;
       case 'file.select': command = { type: 'file.select' }; break;
+      case 'file.remove': command = { type: 'file.remove' }; break;
       case 'artifact.open': command = action; break;
       case 'answer': command = { type: 'answer', taskId: action.taskId, questionId: action.questionId, answer: action.answer }; break;
       case 'confirm': command = { type: 'confirm', taskId: action.taskId, questionId: action.questionId, approved: action.approved }; break;

@@ -106,7 +106,7 @@ impl Default for AppSettings {
             startup_open: "composer".into(),
 
             // Voice & Audio
-            microphone: "Microphone (Realtek Audio)".into(),
+            microphone: String::new(),
             noise_suppression: true,
             voice_activation: true,
             wake_phrase: "Hey Kaji".into(),
@@ -379,28 +379,38 @@ impl GuiManager {
     }
 
     pub fn save_settings(&self, new_settings: AppSettings) -> Result<(), String> {
-        new_settings.validate()?;
-        if let Some(parent) = self.settings_path.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-        let serialized = serde_json::to_string_pretty(&new_settings).map_err(|e| e.to_string())?;
-        fs::write(&self.settings_path, serialized).map_err(|e| e.to_string())?;
+        self.change_settings(|settings| *settings = new_settings)?;
+        Ok(())
+    }
 
-        let mut lock = self
+    pub fn change_settings(
+        &self,
+        change: impl FnOnce(&mut AppSettings),
+    ) -> Result<AppSettings, String> {
+        let mut settings = self
             .settings
             .lock()
             .map_err(|_| "settings mutex poisoned")?;
-        *lock = new_settings.clone();
-
-        // Sync operational toggles
-        if let Ok(mut h) = self.head_control_active.lock() {
-            *h = new_settings.enable_head_control;
+        let mut updated = settings.clone();
+        change(&mut updated);
+        updated.validate()?;
+        if let Some(parent) = self.settings_path.parent() {
+            let _ = fs::create_dir_all(parent);
         }
-        if let Ok(mut v) = self.voice_active.lock() {
-            *v = new_settings.voice_activation;
+        let serialized = serde_json::to_string_pretty(&updated).map_err(|e| e.to_string())?;
+        fs::write(&self.settings_path, serialized).map_err(|e| e.to_string())?;
+        if settings.enable_head_control != updated.enable_head_control
+            && let Ok(mut active) = self.head_control_active.lock()
+        {
+            *active = updated.enable_head_control;
         }
-
-        Ok(())
+        if settings.voice_activation != updated.voice_activation
+            && let Ok(mut active) = self.voice_active.lock()
+        {
+            *active = updated.voice_activation;
+        }
+        *settings = updated.clone();
+        Ok(updated)
     }
 
     pub fn get_status(&self) -> Result<EngineGuiStatus, String> {

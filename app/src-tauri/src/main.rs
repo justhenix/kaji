@@ -39,6 +39,24 @@ struct SensorState {
     target: Option<isize>,
 }
 const SHARED_BROWSER_ARGS: &str = "--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows";
+static COMPOSER_POSITION: Mutex<Option<ComposerPosition>> = Mutex::new(None);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ComposerPosition {
+    Top,
+    Floating,
+    Taskbar,
+}
+
+impl From<&str> for ComposerPosition {
+    fn from(value: &str) -> Self {
+        match value {
+            "top" => Self::Top,
+            "taskbar" => Self::Taskbar,
+            _ => Self::Floating,
+        }
+    }
+}
 #[tauri::command]
 fn sensor_ready(state: State<'_, SensorState>, warmup_ms: f64) -> Result<Session, String> {
     if !warmup_ms.is_finite() || !(0. ..=15000.).contains(&warmup_ms) {
@@ -264,7 +282,9 @@ fn sensor_fault(state: State<'_, SensorState>, reason: String) -> Result<(), Str
         .session
         .lock()
         .map_err(|_| "sensor session poisoned")?;
-    session.cancel();
+    if !session.cancel() {
+        return Ok(());
+    }
     eprintln!(
         "sensor stopped: {}",
         reason.chars().take(512).collect::<String>()
@@ -403,6 +423,7 @@ fn project_runtime_snapshot(
         "main" => Ok(snapshot),
         "audio" => Ok(kaji_engine::runtime::audio_snapshot(snapshot)),
         "overlay" => {
+            snapshot.attachments.clear();
             snapshot.active_conversation_id = None;
             snapshot.task = None;
             snapshot.question = None;
@@ -618,10 +639,15 @@ fn configure_gui_view(
             .outer_position()
             .map_err(|e| e.to_string())?
             .to_logical::<f64>(scale);
-        let (x, y) = if was_composer {
+        let position = ComposerPosition::from(settings.composer_position.as_str());
+        let mut applied_position = COMPOSER_POSITION
+            .lock()
+            .map_err(|_| "composer position lock poisoned")?;
+        let place = !was_composer || *applied_position != Some(position);
+        let (x, y) = if !place {
             (
                 old_position.x + old_size.width - width,
-                if settings.composer_position == "top" {
+                if position == ComposerPosition::Top {
                     old_position.y
                 } else {
                     old_position.y + old_size.height - height
@@ -632,10 +658,12 @@ fn configure_gui_view(
             let pill_height = (92.0 * composer_scale).min(work_height);
             (
                 left + (work_width + pill_width) / 2.0 - width,
-                match settings.composer_position.as_str() {
-                    "top" => top + 8.0,
-                    "taskbar" => top + work_height - height - 8.0,
-                    _ => top + (work_height - pill_height) * 0.68 + pill_height - height,
+                match position {
+                    ComposerPosition::Top => top + 8.0,
+                    ComposerPosition::Taskbar => top + work_height - height - 8.0,
+                    ComposerPosition::Floating => {
+                        top + (work_height - pill_height) * 0.68 + pill_height - height
+                    }
                 },
             )
         };
@@ -649,10 +677,7 @@ fn configure_gui_view(
         }
         let hwnd = HWND(window.hwnd().map_err(|e| e.to_string())?.0);
         remove_composer_frame(hwnd)?;
-        if !was_composer
-            || (old_size.width - width).abs() > 0.5
-            || (old_size.height - height).abs() > 0.5
-        {
+        if place || (old_size.width - width).abs() > 0.5 || (old_size.height - height).abs() > 0.5 {
             set_composer_bounds(
                 hwnd,
                 (x.clamp(left, left + work_width - width) * scale).round() as i32,
@@ -669,8 +694,9 @@ fn configure_gui_view(
             (content_width * scale).ceil() as i32,
             (content_height * scale).ceil() as i32,
             composer_scale * scale,
-            settings.composer_position == "top",
+            position == ComposerPosition::Top,
         )?;
+        *applied_position = Some(position);
     } else {
         let (width, height, min_width, min_height) = match view {
             "main" | "history" => (980.0, 700.0, 880.0, 620.0),

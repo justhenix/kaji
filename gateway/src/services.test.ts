@@ -75,7 +75,7 @@ const voiceList = { voices: [
 ] };
 
 describe("provider routes", () => {
-  test("Groq STT pins model, validates WAV, and forwards only language selection", async () => {
+  test("Groq STT pins model, validates WAV, and supplies app vocabulary with language selection", async () => {
     const env = fixture(); let form: FormData | undefined;
     const response = await handle(request("/v1/audio/transcriptions", { wavBase64: wavBase64(), language: "id" }), env, async (url, init) => {
       expect(url).toBe("https://api.groq.com/openai/v1/audio/transcriptions");
@@ -85,6 +85,9 @@ describe("provider routes", () => {
     });
     expect(response.status).toBe(200); expect(await response.json()).toEqual({ text: "Halo Kaji", language: "indonesian" });
     expect(form?.get("model")).toBe(STT_MODEL); expect(form?.get("language")).toBe("id");
+    expect(form?.get("prompt")).toContain("Kaji");
+    expect(form?.get("prompt")).toContain("dwell");
+    expect(form?.get("prompt")).toContain("kontrol kepala");
     expect((form?.get("file") as File).type).toBe("audio/wav");
   });
 

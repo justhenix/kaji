@@ -11,12 +11,14 @@ pub mod gateway_client;
 pub mod gui;
 pub mod history;
 pub mod native;
+pub mod offline_voice;
 pub mod overlay;
 pub mod review;
 pub mod runtime;
 pub mod sensor;
 pub mod uia;
 pub mod updates;
+pub mod voice_commands;
 
 pub type Result<T> = std::result::Result<T, String>;
 

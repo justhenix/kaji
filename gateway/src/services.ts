@@ -144,6 +144,9 @@ async function transcribe(request: Request, env: ServiceEnv, upstream: ServiceUp
   const file = wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength) as ArrayBuffer;
   form.set("file", new Blob([file], { type: "audio/wav" }), "utterance.wav");
   form.set("model", STT_MODEL); form.set("response_format", "verbose_json"); form.set("temperature", "0");
+  form.set("prompt", language === "id"
+    ? "Kaji. Mode agen, mode bantuan, mode panduan, klik dwell, kontrol kepala, tema terang, tema gelap, command bar, top island, floating window, taskbar dock."
+    : "Kaji. Agent mode, Assist mode, Guide mode, dwell clicking, head control, light theme, dark theme, system theme, command bar, top island, floating window, taskbar dock.");
   if (language) form.set("language", language);
   const timed = signalFor(request, 60000);
   try {

@@ -11,9 +11,11 @@ use crate::{
         self, ConversationRecord, ConversationSummary, HistoryStore, MessageRole, Retention,
     },
     native::{self, InputHost, Rect},
+    offline_voice,
     overlay::{self, Viewport},
     sensor::SensorSession,
     uia::Action,
+    voice_commands::{self, Command as VoiceCommand},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -377,6 +379,7 @@ pub struct RuntimeSnapshot {
     pub question: Option<PendingQuestion>,
     pub message: String,
     pub head: HeadState,
+    pub attachments: Vec<ArtifactReference>,
     pub voice: VoiceState,
     pub overlay: OverlayState,
     pub layout: LayoutState,
@@ -452,6 +455,8 @@ pub enum RuntimeAction {
     Calibrate,
     #[serde(rename = "file.select")]
     FileSelect,
+    #[serde(rename = "file.remove")]
+    FileRemove,
     #[serde(rename = "document.select")]
     DocumentSelect,
     #[serde(rename = "layout.restore")]
@@ -656,6 +661,7 @@ impl RuntimeManager {
                 task: None,
                 question: None,
                 message: "Ready".into(),
+                attachments: Vec::new(),
                 head: HeadState {
                     enabled: false,
                     active: false,
@@ -858,6 +864,19 @@ impl RuntimeManager {
             RuntimeAction::Dwell { enabled } => self.set_dwell(enabled)?,
             RuntimeAction::Calibrate => self.calibrate()?,
             RuntimeAction::FileSelect => self.select_file(false)?,
+            RuntimeAction::FileRemove => {
+                let mut inner = self.inner.lock().map_err(|_| "runtime state poisoned")?;
+                if inner
+                    .snapshot
+                    .task
+                    .as_ref()
+                    .is_some_and(|task| task.phase.active())
+                {
+                    return Err("finish or stop the task before removing its file".into());
+                }
+                inner.selected_file = None;
+                inner.snapshot.attachments.clear();
+            }
             RuntimeAction::DocumentSelect => self.select_file(true)?,
             RuntimeAction::LayoutRestore => {
                 let restored = self.desktop.restore_layout()?;
@@ -959,6 +978,9 @@ impl RuntimeManager {
         if source.is_some_and(|source| !matches!(source, "text" | "voice")) {
             return Err("request source must be text or voice".into());
         }
+        if self.handle_app_command(&request, None, source == Some("voice"))? {
+            return Ok(());
+        }
         let (conversation_id, task_id, mode, target) = {
             let mut inner = self.inner.lock().map_err(|_| "runtime state poisoned")?;
             if inner
@@ -1009,6 +1031,7 @@ impl RuntimeManager {
             inner.snapshot.active_conversation_id = Some(conversation_id.clone());
             inner.snapshot.question = None;
             inner.snapshot.message = "Checking current task context".into();
+            inner.snapshot.attachments.clear();
             inner.snapshot.task = Some(TaskState {
                 id: task_id.clone(),
                 conversation_id: conversation_id.clone(),
@@ -1298,6 +1321,7 @@ impl RuntimeManager {
                     inner.active_target_id = None;
                     inner.step = None;
                     inner.selected_file = None;
+                    inner.snapshot.attachments.clear();
                     inner.snapshot.overlay.clear_target();
                 }
                 _ => unreachable!(),
@@ -1611,6 +1635,7 @@ impl RuntimeManager {
             inner.active_target_id = None;
             inner.step = None;
             inner.selected_file = None;
+            inner.snapshot.attachments.clear();
             inner.snapshot.overlay.clear_target();
             inner.snapshot.revision = inner.snapshot.revision.wrapping_add(1);
             changed = true;
@@ -2490,6 +2515,7 @@ impl RuntimeManager {
             inner.native_session_id = None;
             inner.active_target_id = None;
             inner.selected_file = None;
+            inner.snapshot.attachments.clear();
             inner.step = None;
             inner.task_generation = inner.task_generation.wrapping_add(1);
             inner.snapshot.voice.session_id = inner.snapshot.voice.session_id.wrapping_add(1);
@@ -2757,6 +2783,19 @@ impl RuntimeManager {
             .to_owned();
         let clarification = {
             let mut inner = self.inner.lock().map_err(|_| "runtime state poisoned")?;
+            inner.snapshot.attachments = vec![ArtifactReference {
+                id: new_id("attachment"),
+                name: name.clone(),
+                path: path.to_string_lossy().into_owned(),
+                kind: if path
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"))
+                {
+                    history::ArtifactKind::Docx
+                } else {
+                    history::ArtifactKind::File
+                },
+            }];
             inner.selected_file = Some(path);
             inner
                 .snapshot
@@ -3392,7 +3431,15 @@ impl RuntimeManager {
                     None => Err("voice answer arrived after its question expired".into()),
                 }
             }
-            (None, None) => self.start_request(&text, conversation_id, Some("voice")),
+            (None, None) => self
+                .handle_app_command(&text, transcript.language.as_deref(), true)
+                .and_then(|handled| {
+                    if handled {
+                        Ok(())
+                    } else {
+                        self.start_request(&text, conversation_id, Some("voice"))
+                    }
+                }),
             _ => Err("voice answer is missing its task or question id".into()),
         };
         if let Err(error) = result
@@ -3466,6 +3513,157 @@ impl RuntimeManager {
             .ok();
     }
 
+    fn handle_app_command(
+        self: &Arc<Self>,
+        text: &str,
+        language: Option<&str>,
+        spoken: bool,
+    ) -> Result<bool> {
+        let command = if spoken {
+            voice_commands::parse_spoken(text)
+        } else {
+            voice_commands::parse(text)
+        };
+        let Some(command) = command else {
+            return Ok(false);
+        };
+        let mut settings = self.gui.get_settings()?;
+        let mut confirmation = None;
+        let reply = match command {
+            VoiceCommand::Mode(mode) => {
+                self.set_mode(mode)?;
+                match mode {
+                    Mode::Agent => "agent_mode",
+                    Mode::Assist => "assist_mode",
+                    Mode::Guide => "guide_mode",
+                }
+            }
+            VoiceCommand::Theme(theme) => {
+                settings = self.change_app_settings(|settings| settings.theme = theme.into())?;
+                match theme {
+                    "light" => "light_mode",
+                    "dark" => "dark_mode",
+                    _ => "system_mode",
+                }
+            }
+            VoiceCommand::Dwell(enabled) => {
+                self.set_dwell(enabled)?;
+                confirmation = Some(if enabled {
+                    "Dwell enabled.".into()
+                } else {
+                    "Dwell disabled.".into()
+                });
+                "acknowledged"
+            }
+            VoiceCommand::Head(enabled) => {
+                self.set_head(enabled)?;
+                confirmation = Some(if enabled {
+                    "Head control enabled.".into()
+                } else {
+                    "Head control disabled.".into()
+                });
+                "acknowledged"
+            }
+            VoiceCommand::ComposerPosition(position) => {
+                settings = self
+                    .change_app_settings(|settings| settings.composer_position = position.into())?;
+                let label = match position {
+                    "top" => "Top island",
+                    "taskbar" => "Taskbar dock",
+                    _ => "Floating window",
+                };
+                confirmation = Some(format!("Command bar moved to {label}."));
+                "acknowledged"
+            }
+            VoiceCommand::VoiceFeedback(enabled) => {
+                settings =
+                    self.change_app_settings(|settings| settings.voice_feedback = enabled)?;
+                confirmation = Some(if enabled {
+                    "Spoken feedback enabled.".into()
+                } else {
+                    "Spoken feedback disabled.".into()
+                });
+                "acknowledged"
+            }
+            VoiceCommand::ResponseVolume(volume) => {
+                settings =
+                    self.change_app_settings(|settings| settings.response_volume = volume)?;
+                confirmation = Some(format!("Response volume set to {volume}%."));
+                "acknowledged"
+            }
+            VoiceCommand::Reply(reply) => reply,
+        };
+        let indonesian = match settings.response_language.as_str() {
+            "Bahasa Indonesia" => true,
+            "English (US)" => false,
+            _ => language.map_or(settings.language == "Bahasa Indonesia", |language| {
+                matches!(language, "id" | "indonesian")
+            }),
+        };
+        let clip = offline_voice::clip(reply, indonesian).ok_or("offline reply is unavailable")?;
+        let message = confirmation.as_deref().unwrap_or(clip.text);
+        let conversation_id = {
+            let mut inner = self.inner.lock().map_err(|_| "runtime state poisoned")?;
+            inner.snapshot.message = message.into();
+            inner.snapshot.active_conversation_id.clone()
+        };
+        if let Some(id) = &conversation_id
+            && self.history.get(id)?.is_some()
+        {
+            self.history
+                .append_message(id, None, MessageRole::User, text, &[])?;
+            self.history
+                .append_message(id, None, MessageRole::Assistant, message, &[])?;
+            if let Ok(mut inner) = self.inner.lock() {
+                inner.snapshot.history_revision = inner.snapshot.history_revision.wrapping_add(1);
+            }
+        }
+        if settings.voice_feedback {
+            // Queue instant speech before publishing transcription completion to the audio host.
+            self.play_offline(conversation_id.as_deref(), clip, &settings);
+        }
+        Ok(true)
+    }
+
+    fn change_app_settings(&self, change: impl FnOnce(&mut AppSettings)) -> Result<AppSettings> {
+        let settings = self.gui.change_settings(change)?;
+        if let Some(app) = self.app.lock().ok().and_then(|app| app.clone()) {
+            app.emit("settings-updated", &settings)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(settings)
+    }
+
+    fn play_offline(
+        &self,
+        conversation_id: Option<&str>,
+        clip: offline_voice::Clip,
+        settings: &AppSettings,
+    ) {
+        let Ok(inner) = self.inner.lock() else { return };
+        if inner.snapshot.active_conversation_id.as_deref() != conversation_id {
+            return;
+        }
+        let session_id = inner.snapshot.voice.session_id;
+        drop(inner);
+        if let Some(app) = self.app.lock().ok().and_then(|app| app.clone()) {
+            let _ = app.emit_to(
+                "audio",
+                AUDIO_CONTROL_EVENT,
+                json!({
+                    "type": "play",
+                    "utteranceId": new_id("speech"),
+                    "voiceSessionId": session_id,
+                    "conversationId": conversation_id,
+                    "audioBase64": base64_encode(clip.audio),
+                    "mimeType": "audio/mpeg",
+                    "volume": settings.response_volume as f64 / 100.0,
+                    "outputDeviceId": settings.speaker,
+                }),
+            );
+        }
+    }
+
     fn speak(self: &Arc<Self>, conversation_id: &str, text: &str) {
         let Ok(settings) = self.gui.get_settings() else {
             return;
@@ -3475,6 +3673,10 @@ impl RuntimeManager {
         }
         let text = one_line(text).chars().take(1_000).collect::<String>();
         if text.is_empty() {
+            return;
+        }
+        if let Some(clip) = offline_voice::find(&text) {
+            self.play_offline(Some(conversation_id), clip, &settings);
             return;
         }
         let app = self.app.lock().ok().and_then(|app| app.clone());
@@ -3570,6 +3772,7 @@ impl RuntimeManager {
 }
 
 pub fn audio_snapshot(mut snapshot: RuntimeSnapshot) -> RuntimeSnapshot {
+    snapshot.attachments.clear();
     snapshot.message.clear();
     snapshot.head.cursor = None;
     snapshot.head.reason.clear();
@@ -3621,6 +3824,7 @@ fn fallback_snapshot() -> RuntimeSnapshot {
         task: None,
         question: None,
         message: "Runtime state unavailable".into(),
+        attachments: Vec::new(),
         head: HeadState {
             enabled: false,
             active: false,
