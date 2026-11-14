@@ -1,0 +1,19 @@
+[
+  { "id": "agent_mode", "phrase": "Use agent mode please.", "reply": "agent_mode", "mode": "agent" },
+  { "id": "guide_mode", "phrase": "Use guide mode please.", "reply": "guide_mode", "mode": "guide" },
+  { "id": "assist_mode", "phrase": "Use assist mode please.", "reply": "assist_mode", "mode": "assist" },
+  { "id": "light_mode", "phrase": "Change your appearance into white mode.", "reply": "light_mode", "theme": "light" },
+  { "id": "dark_mode", "phrase": "Use dark mode please.", "reply": "dark_mode", "theme": "dark" },
+  { "id": "system_mode", "phrase": "Use system theme please.", "reply": "system_mode", "theme": "system" },
+  { "id": "dwell_on", "phrase": "Turn on dwell please.", "reply": "acknowledged", "dwell": true },
+  { "id": "dwell_off", "phrase": "Turn off dwell please.", "reply": "acknowledged", "dwell": false },
+  { "id": "head_on", "phrase": "Turn on head control please.", "reply": "acknowledged", "headEnabled": true },
+  { "id": "head_off", "phrase": "Turn off head control please.", "reply": "acknowledged", "headEnabled": false },
+  { "id": "composer_top", "phrase": "Put the command bar position in the top island.", "reply": "acknowledged", "position": "top" },
+  { "id": "composer_taskbar", "phrase": "Move the command bar to the taskbar dock.", "reply": "acknowledged", "position": "taskbar" },
+  { "id": "composer_floating", "phrase": "Use floating window please.", "reply": "acknowledged", "position": "floating" },
+  { "id": "response_volume", "phrase": "Set response volume to fifty percent.", "reply": "acknowledged", "volume": 50 },
+  { "id": "feedback_off", "phrase": "Turn off spoken feedback.", "reply": null, "feedback": false },
+  { "id": "feedback_on", "phrase": "Turn on spoken feedback.", "reply": "acknowledged", "feedback": true },
+  { "id": "voice_test", "phrase": "Test your voice please.", "reply": "voice_test" }
+]

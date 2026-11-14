@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { RuntimeSnapshot } from '../../shared/runtime';
 import { dwellFeedback, isFreshRuntimeSnapshot } from './runtimeState';
+import { getStatusLabel, statusFromRuntime } from './status';
 
 const snapshot = (revision: number): RuntimeSnapshot => ({
   revision, historyRevision: 0, mode: 'assist', activeConversationId: null, task: null, question: null, message: '',
@@ -15,6 +16,18 @@ test('late snapshot cannot roll runtime state back', () => {
   expect(isFreshRuntimeSnapshot(snapshot(8), 9)).toBe(false);
   expect(isFreshRuntimeSnapshot(snapshot(9), 9)).toBe(false);
   expect(isFreshRuntimeSnapshot(snapshot(10), 9)).toBe(true);
+});
+
+test('main status follows live voice phases after finished tasks', () => {
+  const state = snapshot(1);
+  for (const [phase, label] of [['wake', 'Waiting for wake phrase'], ['listening', 'Listening…'], ['transcribing', 'Thinking'], ['speaking', 'Speaking']] as const) {
+    const runtime = { ...state, voice: { ...state.voice, enabled: true, phase }, task: { phase: 'complete' } } as RuntimeSnapshot;
+    expect(getStatusLabel(statusFromRuntime(runtime))).toBe(label);
+  }
+  for (const [phase, label] of [['planning', 'Thinking'], ['working', 'Working…'], ['verifying', 'Working…']] as const) {
+    const runtime = { ...state, task: { phase } } as RuntimeSnapshot;
+    expect(getStatusLabel(statusFromRuntime(runtime))).toBe(label);
+  }
 });
 
 test('dwell shows the actual readiness step and treats other input as a pause', () => {

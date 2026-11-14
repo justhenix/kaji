@@ -1,4 +1,5 @@
-import { broadcastSettings, DEFAULT_SETTINGS, fetchEngineStatus, fetchSettings, onSettingsUpdated, persistSettings } from './ipc';
+import { broadcastSettings, DEFAULT_SETTINGS, fetchEngineStatus, fetchSettings, onRuntimeUpdate, onSettingsUpdated, persistSettings } from './ipc';
+import { statusFromRuntime } from './status';
 import type { AppSettings, EngineGuiStatus } from './types';
 
 type Listener = (source: 'draft' | 'external' | 'status' | 'saved') => void;
@@ -39,7 +40,8 @@ class SettingsStore {
       this.notify('external');
     });
 
-    window.setInterval(() => { void this.refreshEngineStatus(); }, 1000);
+    const unlisten = onRuntimeUpdate((runtime) => this.updateEngineStatus(statusFromRuntime(runtime)));
+    window.addEventListener('pagehide', unlisten, { once: true });
     this.notify('saved');
   }
 

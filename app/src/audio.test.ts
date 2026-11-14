@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import type { RuntimeSnapshot } from '../shared/runtime';
-import { AudioHost, downsample, encodeWav, shouldRestoreWake, shouldStartWake, utteranceRoute } from './audio';
+import { AudioHost, downsample, encodeWav, selectedInputDevice, shouldRestoreWake, shouldStartWake, utteranceRoute } from './audio';
 
 function utteranceCapture() {
   const host = Object.assign(Object.create(AudioHost.prototype), {
@@ -35,6 +35,15 @@ test('natural pauses do not submit a command before the speaker finishes', async
   expect(capture.finished).toBe(false);
   await capture.feed(2400, 0.00065);
   expect(capture.finished).toBe(true);
+});
+
+test('automatic microphone follows Windows default rather than newest connected device', () => {
+  const devices = [{ kind: 'audioinput', deviceId: 'default' }, { kind: 'audioinput', deviceId: 'vivo-buds' }, { kind: 'audioinput', deviceId: 'webcam' }] as const;
+  expect(selectedInputDevice([...devices])).toBeUndefined();
+  expect(selectedInputDevice([...devices], '')).toBeUndefined();
+  expect(selectedInputDevice([...devices], 'default')).toBeUndefined();
+  expect(selectedInputDevice([...devices], 'vivo-buds')).toBe('vivo-buds');
+  expect(selectedInputDevice([...devices], 'unplugged-headset')).toBeUndefined();
 });
 
 test('captured PCM becomes mono 16 kHz WAV within expected byte bounds', () => {

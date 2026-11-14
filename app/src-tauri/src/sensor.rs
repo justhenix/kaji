@@ -39,9 +39,11 @@ impl SensorSession {
         Ok(session)
     }
 
-    pub fn cancel(&mut self) {
+    pub fn cancel(&mut self) -> bool {
+        let was_active = !self.cancelled;
         self.cancelled = true;
         self.reset_authorized = false;
+        was_active
     }
 
     pub fn authorize_reset(&mut self) {

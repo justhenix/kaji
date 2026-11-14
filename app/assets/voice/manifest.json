@@ -1,0 +1,13 @@
+[
+  { "id": "ready", "en": "Ready when you are.", "idn": "Siap. Silakan." },
+  { "id": "sorry", "en": "Sorry, could you say that again?", "idn": "Maaf, bisa diulangi?" },
+  { "id": "acknowledged", "en": "I'll do it.", "idn": "Baik, saya kerjakan." },
+  { "id": "anything_else", "en": "What else do you need?", "idn": "Ada lagi yang bisa saya bantu?" },
+  { "id": "voice_test", "en": "Voice test. Ready when you are.", "idn": "Tes suara. Siap membantu Anda." },
+  { "id": "agent_mode", "en": "Agent mode. Ready when you are.", "idn": "Mode agen aktif. Siap membantu." },
+  { "id": "assist_mode", "en": "Assist mode activated.", "idn": "Mode bantuan aktif." },
+  { "id": "guide_mode", "en": "Guide mode activated.", "idn": "Mode panduan aktif." },
+  { "id": "light_mode", "en": "White mode activated.", "idn": "Tema terang aktif." },
+  { "id": "dark_mode", "en": "Dark mode activated.", "idn": "Tema gelap aktif." },
+  { "id": "system_mode", "en": "System appearance activated.", "idn": "Tema mengikuti sistem." }
+]

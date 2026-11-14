@@ -313,7 +313,12 @@ function updateDynamicElements(): void {
   const status = store.status;
 
   const chip = document.getElementById('hero-status-chip');
-  if (chip) { chip.textContent = getStatusLabel(status); chip.setAttribute('title', status.reason || getStatusLabel(status)); }
+  if (chip) {
+    const label = getStatusLabel(status);
+    if (chip.textContent !== label) chip.textContent = label;
+    const reason = status.reason || label;
+    if (chip.title !== reason) chip.title = reason;
+  }
 
   document.querySelectorAll<HTMLElement>('.mode-card-option').forEach((card) => {
     card.classList.toggle('active', card.dataset.mode === status.mode);

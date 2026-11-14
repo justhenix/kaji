@@ -49,6 +49,8 @@ async function invoke<T>(page: Page, command: string, args: Record<string, unkno
 }
 
 async function start(live = false): Promise<{ main: Page; pages: Page[] }> {
+  const disabledCredential = join(isolated, 'disabled-gateway-token.dpapi');
+  if (!live) await mkdir(disabledCredential, { recursive: true });
   const probe = createServer();
   await new Promise<void>(accept => probe.listen(0, '127.0.0.1', accept));
   const address = probe.address();
@@ -59,7 +61,7 @@ async function start(live = false): Promise<{ main: Page; pages: Page[] }> {
     env: {
       ...process.env,
       KAJI_GATEWAY_TOKEN: undefined,
-      KAJI_GATEWAY_CREDENTIAL_PATH: live ? undefined : join(isolated, 'missing-gateway-token.dpapi'),
+      KAJI_GATEWAY_CREDENTIAL_PATH: live ? undefined : disabledCredential,
       APPDATA: join(isolated, 'roaming'), LOCALAPPDATA: join(isolated, 'local'),
       WEBVIEW2_USER_DATA_FOLDER: join(isolated, `webview-${++launches}`),
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1`,
@@ -134,6 +136,77 @@ try {
   const sprite = overlay.locator('.doppelganger-cursor');
   await expect(sprite).toBeHidden();
   checks.push('No idle Doppel copy follows the user pointer in the native overlay');
+
+  for (const [text, mode] of [
+    ['Hey Kaji, can you use agent mode please?', 'agent'],
+    ['Use agile mode, please.', 'agent'],
+    ['Switch to guide mode', 'guide'],
+    ['Use assist mode', 'assist'],
+  ]) {
+    const controlled = await invoke<RuntimeSnapshot>(main, 'gui_dispatch', { action: { type: 'request', source: 'voice', text } });
+    assert.equal(controlled.mode, mode);
+    assert.equal(controlled.task, null);
+  }
+  for (const [text, theme] of [
+    ['Hey Kaji change your appearance into white mode', 'light'],
+    ['Set your theme to dark', 'dark'],
+    ['Use system theme', 'system'],
+    ['Use dark mode', 'dark'],
+  ]) {
+    await invoke(main, 'gui_dispatch', { action: { type: 'request', source: 'voice', text } });
+    assert.equal((await invoke<{ theme: string }>(main, 'gui_get_settings')).theme, theme);
+    if (theme !== 'system') await expect(main.locator('html')).toHaveAttribute('data-theme', theme);
+  }
+  for (const text of ['Hey Kaji', 'Test your voice', 'Thank you']) {
+    const controlled = await invoke<RuntimeSnapshot>(main, 'gui_dispatch', { action: { type: 'request', source: 'voice', text } });
+    assert.equal(controlled.task, null);
+    assert(controlled.message.length > 0);
+  }
+  checks.push('Voice app commands switch all modes and themes, persist settings, render theme changes, and answer basic prompts without gateway credentials');
+  for (const [text, position] of [
+    ['Can you put the command bar position in the top island?', 'top'],
+    ['Use taskbar dock', 'taskbar'],
+    ['Use floating window', 'floating'],
+  ]) {
+    await invoke(main, 'gui_dispatch', { action: { type: 'request', source: 'voice', text } });
+    assert.equal((await invoke<typeof DEFAULT_SETTINGS>(main, 'gui_get_settings')).composer_position, position);
+    await expect(main.locator(`[data-pos="${position}"]`)).toHaveAttribute('aria-pressed', 'true');
+  }
+  await assert.rejects(invoke(main, 'gui_dispatch', { action: { type: 'request', source: 'voice', text: 'Can you turn on the JOEL list?' } }), /permission/i);
+  const dwellBlocked = await invoke<RuntimeSnapshot>(main, 'gui_get_runtime');
+  assert.equal(dwellBlocked.task, null);
+  assert.equal(dwellBlocked.head.enabled, false);
+  await invoke(main, 'gui_dispatch', { action: { type: 'request', source: 'voice', text: 'Turn off dwell' } });
+  await invoke(main, 'gui_dispatch', { action: { type: 'file.remove' } });
+  assert.deepEqual((await invoke<RuntimeSnapshot>(main, 'gui_get_runtime')).attachments, []);
+  checks.push('Spoken command-bar positions update real controls; observed dwell mishearing reaches native permission checks without an agent task; empty attachment removal is safe');
+
+  await audio.evaluate(() => {
+    const original = HTMLMediaElement.prototype.play;
+    const proof = { plays: 0, ended: false, duration: 0, volume: -1, blob: false };
+    (window as unknown as { offlineVoiceProof: typeof proof }).offlineVoiceProof = proof;
+    HTMLMediaElement.prototype.play = function () {
+      proof.plays++;
+      proof.volume = this.volume;
+      proof.blob = this.src.startsWith('blob:');
+      this.addEventListener('ended', () => { proof.ended = true; proof.duration = this.duration; }, { once: true });
+      return original.call(this);
+    };
+  });
+  const voiceSettings = await invoke<typeof DEFAULT_SETTINGS>(main, 'gui_get_settings');
+  await invoke(main, 'gui_save_settings', { settings: { ...voiceSettings, voice_feedback: true, response_volume: 0 } });
+  await invoke(main, 'gui_dispatch', { action: { type: 'request', source: 'voice', text: 'Test your voice' } });
+  await expect(main.locator('#hero-status-chip')).toHaveText('Speaking');
+  await expect.poll(() => audio.evaluate(() => (window as unknown as { offlineVoiceProof: { ended: boolean } }).offlineVoiceProof.ended), { timeout: 10_000 }).toBe(true);
+  await expect(main.locator('#hero-status-chip')).toHaveText('Ready');
+  const voiceProof = await audio.evaluate(() => (window as unknown as { offlineVoiceProof: { plays: number; duration: number; volume: number; blob: boolean } }).offlineVoiceProof);
+  assert.equal(voiceProof.plays, 1);
+  assert.equal(voiceProof.volume, 0);
+  assert.equal(voiceProof.blob, true);
+  assert(voiceProof.duration > 0 && Number.isFinite(voiceProof.duration));
+  assert.equal((await invoke<RuntimeSnapshot>(main, 'gui_get_runtime')).task, null);
+  await invoke(main, 'gui_save_settings', { settings: voiceSettings });
+  checks.push('Bundled voice test decodes and completes in real WebView2 before any conversation exists, respects response volume, and needs no gateway credential');
 
   await main.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(main).toHaveURL(/settings\.html/);

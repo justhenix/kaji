@@ -14,7 +14,7 @@ function deferred<T>() {
 }
 async function flush() { for (let i = 0; i < 20; i++) await Promise.resolve(); }
 
-function harness(enumerateDevices: () => Promise<unknown[]>, setSinkId: () => Promise<void> = async () => {}) {
+function harness(enumerateDevices: () => Promise<unknown[]>, setSinkId: () => Promise<void> = async () => {}, conversationId: string | null = 'conversation') {
   let plays = 0, pauses = 0, runtimeReads = 0;
   let player: Audio | undefined;
   const phases: string[] = [], revoked: string[] = [];
@@ -28,19 +28,65 @@ function harness(enumerateDevices: () => Promise<unknown[]>, setSinkId: () => Pr
     setSinkId = setSinkId;
   }
   const context = {
-    Audio, Blob, console, Uint8Array, AbortController, atob,
+    Audio, Blob, console, Uint8Array, AbortController, atob, btoa, crypto,
     performance: { now: () => 0 },
     URL: { createObjectURL: () => 'blob:test-audio', revokeObjectURL: (value: string) => revoked.push(value) },
     navigator: { mediaDevices: { enumerateDevices } },
-    fetchRuntime: async () => { runtimeReads++; return { revision: 1, activeConversationId: 'conversation', voice: { sessionId: 1 } }; },
-    dispatchRuntime: async (action: { phase: string }) => { phases.push(action.phase); },
+    fetchRuntime: async () => { runtimeReads++; return { revision: 1, activeConversationId: conversationId, voice: { sessionId: 1 } }; },
+    dispatchRuntime: async (action: { type: string; phase: string }) => {
+      if (action.type === 'audio.transcribe') return { revision: 2, voice: { sessionId: 1, phase: 'transcribing' } };
+      phases.push(action.phase);
+    },
   };
   const Host = runInNewContext(`${source}\nAudioHost;`, context) as new () => { control(value: AudioControl): Promise<void>; acceptRuntime(value: unknown): void };
   return { host: new Host(), phases, revoked, finishPlayback: () => player?.onended?.(), get plays() { return plays; }, get pauses() { return pauses; }, get runtimeReads() { return runtimeReads; } };
 }
 
-const speech = (utteranceId: string): AudioControl => ({
+const speech = (utteranceId: string): Extract<AudioControl, { type: 'play' }> => ({
   type: 'play', utteranceId, voiceSessionId: 1, conversationId: 'conversation', audioBase64: btoa('encoded-test-audio'), mimeType: 'audio/mpeg', volume: 0.5,
+});
+
+test('Offline acknowledgements play before a conversation exists', async () => {
+  const h = harness(async () => [], undefined, null);
+  const playing = h.host.control({ ...speech('offline-ready'), conversationId: null });
+  await flush();
+  expect(h.plays).toBe(1);
+  h.finishPlayback();
+  await playing;
+  expect(h.phases).toEqual(['speaking', 'off']);
+});
+
+test('Instant speech waits for transcription completion before one-shot microphone cleanup', async () => {
+  const h = harness(async () => []);
+  const capture = h.host as unknown as {
+    mode: string; heardSpeech: boolean; recording: Float32Array[];
+    captureRoute: Promise<{ voiceSessionId: number }>;
+    finishUtterance(): Promise<void>;
+  };
+  capture.mode = 'utterance';
+  capture.heardSpeech = true;
+  capture.recording = [new Float32Array([0.2, -0.2])];
+  capture.captureRoute = Promise.resolve({ voiceSessionId: 1 });
+  const finishing = capture.finishUtterance();
+  await flush();
+  await h.host.control(speech('instant-mode-confirmation'));
+  expect(h.plays).toBe(0);
+  h.host.acceptRuntime({ revision: 3, activeConversationId: 'conversation', voice: { sessionId: 1, phase: 'wake' } });
+  await flush();
+  expect(h.plays).toBe(1);
+  expect(h.phases).toEqual(['transcribing', 'speaking']);
+  h.finishPlayback();
+  await finishing;
+  expect(h.phases.at(-1)).toBe('off');
+});
+
+test('Stop discards an instant reply queued during transcription', async () => {
+  const h = harness(async () => []);
+  (h.host as unknown as { transcriptionPending: boolean }).transcriptionPending = true;
+  await h.host.control(speech('cancelled-local-reply'));
+  await h.host.control({ type: 'stop' });
+  expect((h.host as unknown as { pendingPlayback: unknown }).pendingPlayback).toBeUndefined();
+  expect(h.plays).toBe(0);
 });
 
 test('Stop during delayed speaker enumeration cannot start audio later', async () => {
@@ -186,6 +232,43 @@ test('Launch starts capture from native readiness without waiting for a loopback
   }
 });
 
+test('automatic input restarts for Windows default changes, not unrelated device connections', async () => {
+  let deviceChange: (() => void) | undefined;
+  let devices = [{ kind: 'audioinput', deviceId: 'default', groupId: 'headset', label: 'Default - vivo Buds' }];
+  const starts: string[] = [];
+  const Host = runInNewContext(`${source}\nAudioHost;`, {
+    Audio: class {}, window: { addEventListener() {} },
+    navigator: { mediaDevices: {
+      enumerateDevices: async () => devices,
+      addEventListener: (_name: string, callback: () => void) => { deviceChange = callback; },
+    } },
+    AUDIO_CONTROL_EVENT: 'audio', RUNTIME_UPDATE_EVENT: 'runtime', listen: async () => () => {},
+    fetchRuntime: async () => ({ revision: 1, voice: { sessionId: 1, enabled: false, phase: 'off' } }),
+  }) as new () => {
+    mount(): Promise<void>; mode: string; capturing: boolean; wakeEnabled: boolean; pendingInputChange: boolean;
+    spotter: { reset(): Promise<void> }; start(mode: string): Promise<void>; resumeWakeOrStop(): Promise<void>;
+  };
+  const host = new Host();
+  await host.mount();
+  host.mode = 'wake'; host.wakeEnabled = true;
+  host.spotter = { reset: async () => {} };
+  host.start = async mode => { starts.push(mode); };
+  devices.push({ kind: 'audioinput', deviceId: 'webcam', groupId: 'camera', label: '2.0 Camera' });
+  deviceChange!(); await flush();
+  expect(starts).toEqual([]);
+  devices = [{ kind: 'audioinput', deviceId: 'default', groupId: 'camera', label: 'Default - 2.0 Camera' }];
+  deviceChange!(); await flush();
+  expect(starts).toEqual(['wake']);
+  host.capturing = true;
+  devices = [{ kind: 'audioinput', deviceId: 'default', groupId: 'headset', label: 'Default - vivo Buds' }];
+  deviceChange!(); await flush();
+  expect(starts).toEqual(['wake']);
+  expect(host.pendingInputChange).toBe(true);
+  host.capturing = false;
+  await host.resumeWakeOrStop();
+  expect(starts).toEqual(['wake', 'wake']);
+});
+
 test('Auto-send preserves a short pause and submits after the final continuous pause', async () => {
   const h = harness(async () => []);
   const capture = h.host as unknown as {
@@ -207,5 +290,17 @@ test('Auto-send preserves a short pause and submits after the final continuous p
   await capture.recordUtterance(chunk, 0);
   expect(sends).toBe(0);
   for (let i = 0; i < 4 && sends === 0; i++) await capture.recordUtterance(chunk, 0);
+  expect(sends).toBe(1);
+});
+
+test('Long speech keeps a longer pause allowance without waiting three seconds', async () => {
+  const h = harness(async () => []);
+  const capture = h.host as unknown as {mode: string; capturing: boolean; recordUtterance(samples: Float32Array, level: number): Promise<void>; finishUtterance(): Promise<void>};
+  capture.mode = 'utterance'; capture.capturing = true;
+  let sends = 0; capture.finishUtterance = async () => { sends++; };
+  await capture.recordUtterance(new Float32Array(160_000), 0.1);
+  await capture.recordUtterance(new Float32Array(24_000), 0);
+  expect(sends).toBe(0);
+  await capture.recordUtterance(new Float32Array(8_000), 0);
   expect(sends).toBe(1);
 });

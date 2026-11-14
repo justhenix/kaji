@@ -32,6 +32,10 @@ export function shouldStartWake(snapshot: RuntimeSnapshot | null, enabled: boole
   return enabled && snapshot?.voice.sessionId === 0 && !snapshot.voice.enabled && snapshot.voice.phase === 'off';
 }
 
+export function selectedInputDevice(devices: Pick<MediaDeviceInfo, 'kind' | 'deviceId'>[], preferred?: string): string | undefined {
+  return preferred && preferred !== 'default' && devices.some(device => device.kind === 'audioinput' && device.deviceId === preferred) ? preferred : undefined;
+}
+
 export function utteranceRoute(snapshot: RuntimeSnapshot | null): { taskId?: string; questionId?: string; conversationId?: string; voiceSessionId: number } {
   const question = snapshot?.question;
   return { voiceSessionId: snapshot?.voice.sessionId ?? 0, ...(snapshot?.activeConversationId ? { conversationId: snapshot.activeConversationId } : {}), ...(question ? { taskId: question.taskId, questionId: question.id } : {}) };
@@ -100,8 +104,8 @@ export class AudioHost {
   private mode: 'wake' | 'utterance' | null = null;
   private wakeEnabled = false;
   private soundEffects = false;
-  private knownInputs: Set<string> | undefined;
-  private recentInput: string | undefined;
+  private defaultInput: string | undefined;
+  private pendingInputChange = false;
   private inputDeviceId: string | undefined;
   private noiseSuppression = true;
   private deviceScan = 0;
@@ -121,6 +125,7 @@ export class AudioHost {
   private capturing = false;
   private finishingUtterance = false;
   private transcriptionPending = false;
+  private pendingPlayback: Extract<AudioControl, { type: 'play' }> | undefined;
   private chain = Promise.resolve();
   private lastLevelAt = 0;
   private peakLevel = 0;
@@ -142,12 +147,15 @@ export class AudioHost {
     const devices = navigator.mediaDevices;
     const onDeviceChange = () => {
       const generation = this.generation;
-      const previous = this.recentInput;
+      const previous = this.defaultInput;
       void this.refreshInputDevices().then((inputs) => {
-        if (generation !== this.generation || previous === this.recentInput
-          || this.mode !== 'wake' || this.capturing || this.transcriptionPending || this.speaking
-          || inputs.some(device => device.deviceId === this.inputDeviceId)) return;
-        void this.start('wake', this.inputDeviceId, this.noiseSuppression);
+        if (generation !== this.generation || previous === this.defaultInput || !this.mode
+          || selectedInputDevice(inputs, this.inputDeviceId)) return;
+        this.pendingInputChange = true;
+        if (this.mode === 'wake' && !this.capturing && !this.transcriptionPending && !this.speaking) {
+          this.pendingInputChange = false;
+          void this.start('wake', this.inputDeviceId, this.noiseSuppression);
+        }
       });
     };
     devices?.addEventListener('devicechange', onDeviceChange);
@@ -199,6 +207,10 @@ export class AudioHost {
       else await this.finishUtterance();
       return;
     }
+    if (this.transcriptionPending) {
+      this.pendingPlayback = control;
+      return;
+    }
     await this.play(control);
   }
 
@@ -248,12 +260,8 @@ export class AudioHost {
     const devices = await navigator.mediaDevices?.enumerateDevices().catch(() => null);
     const inputs = devices?.filter(device => device.kind === 'audioinput') ?? [];
     if (!devices || scan !== this.deviceScan) return inputs;
-    const ids = new Set(inputs.map(device => device.deviceId).filter(id => id && id !== 'default' && id !== 'communications'));
-    if (this.knownInputs) {
-      this.recentInput = [...ids].find(id => !this.knownInputs!.has(id))
-        ?? (this.recentInput && ids.has(this.recentInput) ? this.recentInput : undefined);
-    }
-    if (ids.size || this.knownInputs) this.knownInputs = ids;
+    const selected = inputs.find(device => device.deviceId === 'default');
+    this.defaultInput = selected ? `${selected.groupId}:${selected.label}` : undefined;
     return inputs;
   }
 
@@ -262,8 +270,7 @@ export class AudioHost {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microphone capture is unavailable');
     const devices = await this.refreshInputDevices();
     if (!this.mode || generation !== this.generation) return;
-    const pinned = inputDeviceId && devices.some(device => device.deviceId === inputDeviceId) ? inputDeviceId : undefined;
-    const selected = pinned ?? this.recentInput;
+    const selected = selectedInputDevice(devices, inputDeviceId);
     const capture = (deviceId?: string) => navigator.mediaDevices.getUserMedia({ audio: {
       deviceId: deviceId ? { exact: deviceId } : undefined,
       noiseSuppression,
@@ -276,7 +283,7 @@ export class AudioHost {
     try {
       stream = await capture(selected);
     } catch (error) {
-      if (!selected || pinned || generation !== this.generation || !this.mode
+      if (!selected || generation !== this.generation || !this.mode
         || !['NotFoundError', 'OverconstrainedError', 'NotReadableError'].includes((error as DOMException)?.name)) throw error;
       stream = await capture();
     }
@@ -284,7 +291,17 @@ export class AudioHost {
     this.stream = stream;
     void this.refreshInputDevices();
     this.micLabel = stream.getAudioTracks()[0]?.label.replace(/^Default - /, '') || 'the selected microphone';
-    this.stream.getAudioTracks()[0]?.addEventListener('ended', () => { void this.stop().then(() => this.setPhase('error', 'Microphone disconnected')); }, { once: true });
+    this.stream.getAudioTracks()[0]?.addEventListener('ended', () => {
+      void this.refreshInputDevices().then(async inputs => {
+        if (generation !== this.generation || !this.mode) return;
+        if (this.mode === 'wake' && inputs.length && !selectedInputDevice(inputs, this.inputDeviceId)) {
+          await this.start('wake', this.inputDeviceId, this.noiseSuppression);
+        } else {
+          await this.stop();
+          await this.setPhase('error', 'Microphone disconnected');
+        }
+      });
+    }, { once: true });
     try { this.context = new AudioContext({ sampleRate: 16_000 }); }
     catch { this.context = new AudioContext(); }
     const context = this.context;
@@ -293,7 +310,7 @@ export class AudioHost {
     this.source = this.context.createMediaStreamSource(this.stream);
     this.processor = new AudioWorkletNode(this.context, 'kaji-audio-capture', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
     this.processor.port.onmessage = (event: MessageEvent<Float32Array>) => {
-      if (generation !== this.generation || !this.mode) return;
+      if (generation !== this.generation || !this.mode || this.speaking || this.transcriptionPending) return;
       const samples = downsample(event.data, context.sampleRate);
       this.chain = this.chain.then(() => {
         if (generation === this.generation && this.mode) return this.handleSamples(samples);
@@ -425,7 +442,12 @@ export class AudioHost {
         this.transcriptionPending = false;
         this.captureRoute = Promise.resolve({ voiceSessionId: 0 });
         if (failed) await this.stop(false);
-        else await this.resumeWakeOrStop();
+        else {
+          const pending = this.pendingPlayback;
+          this.pendingPlayback = undefined;
+          if (pending) await this.play(pending, false);
+          if (generation === this.generation) await this.resumeWakeOrStop();
+        }
       }
     }
   }
@@ -462,6 +484,11 @@ export class AudioHost {
   private async resumeWakeOrStop(): Promise<void> {
     const generation = this.generation;
     if (this.wakeEnabled && this.spotter && this.mode) {
+      if (this.pendingInputChange) {
+        this.pendingInputChange = false;
+        await this.start('wake', this.inputDeviceId, this.noiseSuppression);
+        return;
+      }
       this.mode = 'wake';
       await this.spotter.reset().catch(() => {});
       if (generation !== this.generation || !this.mode) return;
@@ -469,7 +496,7 @@ export class AudioHost {
     } else if (this.mode) await this.stop();
   }
 
-  private async play(control: Extract<AudioControl, { type: 'play' }>): Promise<void> {
+  private async play(control: Extract<AudioControl, { type: 'play' }>, resumeCapture = true): Promise<void> {
     if (this.playedUtterances.has(control.utteranceId)) return;
     const generation = this.generation;
     const request = ++this.playbackRequest;
@@ -522,6 +549,11 @@ export class AudioHost {
       if (!current()) return;
       this.speaking = false;
       this.playbackSession = undefined;
+      if (!resumeCapture) return;
+      if (this.pendingInputChange && this.mode === 'wake') {
+        await this.resumeWakeOrStop();
+        return;
+      }
       await this.spotter?.reset().catch(() => {});
       if (!current() || failed) return;
       if (this.mode === 'wake') await this.setPhase('wake');
@@ -544,6 +576,8 @@ export class AudioHost {
     this.capturing = false;
     this.finishingUtterance = false;
     this.transcriptionPending = false;
+    this.pendingPlayback = undefined;
+    this.pendingInputChange = false;
     this.speaking = false;
     this.playbackSession = undefined;
     this.recording = [];
